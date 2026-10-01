@@ -147,6 +147,25 @@ def test_invalid_success_is_not_green(action_environment, raw):
     assert data["error"]
 
 
+@pytest.mark.parametrize("schema_version", [2, True, "1"])
+def test_unsupported_monitor_schema_fails_safely_and_clearly(action_environment, schema_version):
+    report = monitor_report()
+    report["schema_version"] = schema_version
+    report["private_payload"] = "PRIVATE future-schema field"
+    outputs, data, markdown = action_environment[0](report)
+    assert outputs["exit_code"] == "2"
+    assert data == {
+        "error": {
+            "type": "invalid_report",
+            "message": (
+                "PromptDrift could not complete. Check configuration, baseline and provider access locally."
+            ),
+        },
+        "exit_code": 2,
+    }
+    assert "PRIVATE" not in json.dumps(data) + markdown
+
+
 @pytest.mark.parametrize("code", [2, 3])
 def test_error_envelopes_keep_codes_but_never_publish_provider_messages(action_environment, code):
     outputs, data, markdown = action_environment[0](
@@ -219,11 +238,39 @@ def test_check_mode_keeps_base_ref_as_one_literal_argument(action_environment, m
 def test_monitor_ignores_base_and_drops_raw_fields(action_environment, monkeypatch):
     monkeypatch.setenv("PROMPTDRIFT_BASE_REF", "malicious base")
     data = monitor_report()
+    data["future_field"] = {"prompt": "sensitive future payload"}
     data["raw_output"] = "sensitive payload"
-    data["tests"][0].update(prompt="sensitive prompt", output="sensitive output")
+    data["tests"][0].update(
+        prompt="sensitive prompt",
+        output="sensitive output",
+        nested={"provider_response": "sensitive nested payload"},
+    )
     _, report, _ = action_environment[0](data)
     assert "--base" not in action_environment[2].read_text(encoding="utf-8")
     assert "sensitive" not in json.dumps(report)
+    assert set(report) == {
+        "schema_version",
+        "run_id",
+        "generated_at",
+        "provider",
+        "model",
+        "samples",
+        "baseline_path",
+        "counts",
+        "diagnosis_counts",
+        "tests",
+    }
+    assert set(report["tests"][0]) == {
+        "test_id",
+        "status",
+        "diagnosis",
+        "summary",
+        "samples",
+        "failures",
+        "provider_errors",
+        "output_changes",
+        "evidence",
+    }
 
 
 def test_summary_escapes_markdown_mentions_and_redacts_keys(action_environment, monkeypatch):

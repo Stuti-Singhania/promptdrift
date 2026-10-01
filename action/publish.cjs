@@ -47,7 +47,9 @@ async function publish({github, context, core, env = process.env}) {
     if (issueAllowed) {
       const code = Number(env.PROMPTDRIFT_EXIT_CODE);
       // Config/report errors are not claims of model drift. A provider error envelope is alertable.
-      if (data.error ? data.exit_code !== 3 : !(data.counts?.FAIL > 0 || data.counts?.ERROR > 0)) return;
+      if (data.error
+        ? data.error.type !== 'cli_error' || data.exit_code !== 3
+        : !(data.counts?.FAIL > 0 || data.counts?.ERROR > 0)) return;
       if (![1, 3].includes(code) || !/^[a-f0-9]{64}$/.test(env.PROMPTDRIFT_SCOPE || '')) return;
       const scope = env.PROMPTDRIFT_SCOPE;
       const marker = `<!-- promptdrift-monitor:${scope} -->`;

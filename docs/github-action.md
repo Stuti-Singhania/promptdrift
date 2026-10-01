@@ -71,7 +71,7 @@ Nonzero CLI codes are preserved, including when stdout is empty or malformed. In
 
 An error report has `{ "error": { "type": "...", "message": "..." }, "exit_code": 2 }`. The Action deliberately replaces original error text with a generic message because exceptions can contain credentials or provider payloads. Investigate sensitive details locally, not in a public issue.
 
-Successful monitor JSON uses schema version `1`: run ID/time, provider/model, samples, baseline path, `counts`, `diagnosis_counts` and per-case test evidence. **Counts represent cases, not samples.** The Action validates the schema and projects only public monitor fields. Stable diagnosis labels are `stable`, `observed_model_drift`, `prompt_changed`, `configuration_changed`, `contract_changed`, `provider_changed`, `provider_error`, `insufficient_evidence`, `new_test`, `stochastic_behavior` and `output_changed`. A diagnosis is evidence, not proof of a vendor-side model update.
+Successful monitor JSON uses schema version `1`: run ID/time, provider/model, samples, baseline path, `counts`, `diagnosis_counts` and per-case test evidence. **Counts represent cases, not samples.** Schema version `1` is the only supported monitor contract; unsupported versions and malformed required fields produce a generic `invalid_report` error instead of being treated as success. Unknown top-level and per-case fields are dropped, and the Action projects only the documented public monitor fields. This allowlist lets the CLI add internal fields without exposing them through monitor artifacts or publication. Stable diagnosis labels are `stable`, `observed_model_drift`, `prompt_changed`, `configuration_changed`, `contract_changed`, `provider_changed`, `provider_error`, `insufficient_evidence`, `new_test`, `stochastic_behavior` and `output_changed`. A diagnosis is evidence, not proof of a vendor-side model update.
 
 ## PR checks and optional comments
 
@@ -134,7 +134,7 @@ Issues are off by default. With `create-issue: 'true'`, monitor exits `1` or `3`
 
 Repeated failures update the issue body without posting comments. Healthy runs do **not** auto-close issues; close them after investigation. A later failure creates a new issue if the prior one was closed. This alerts on contract/provider failures, not every warning or changed output. Separate matrix dimensions targeting the same config should use different `issue-scope` values (and artifact names), unless they intentionally share an alert.
 
-Summary/issue text contains only aggregate counts, diagnosis labels and bounded escaped test IDs, with mentions neutralized. It does not publish raw prompts/outputs, provider exception text, free-form evidence or summaries. The issue links to the workflow run. There is no Slack or external alert integration.
+Summary/issue text contains only aggregate counts, diagnosis labels and bounded escaped test IDs, with mentions neutralized. It does not publish raw prompts/outputs, provider exception text, free-form evidence or summaries. Only validated contract/provider failures can open or update an issue; an invalid report with a provider-like exit code is not treated as a provider failure. The issue links to the workflow run. There is no Slack or external alert integration.
 
 ## Credentials and report privacy
 

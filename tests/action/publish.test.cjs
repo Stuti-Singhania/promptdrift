@@ -117,17 +117,36 @@ for (const [name, changes, event] of [
   });
 }
 
-test('manual provider failure envelope is alertable, invalid report is not', async t => {
+test('only provider failures and monitor contract failures are alertable', async t => {
   const f = fixture(t, {PROMPTDRIFT_EXIT_CODE: '3'});
   f.context.eventName = 'workflow_dispatch';
-  fs.writeFileSync(f.env.PROMPTDRIFT_REPORT, JSON.stringify({error: {message: 'PRIVATE'}, exit_code: 3}));
+  fs.writeFileSync(f.env.PROMPTDRIFT_REPORT, JSON.stringify({
+    error: {type: 'cli_error', message: 'PRIVATE'}, exit_code: 3,
+  }));
   await publish(f);
   assert.ok(f.calls.some(call => call.method === 'create'));
   assert.doesNotMatch(f.calls.find(call => call.method === 'create').args.body, /PRIVATE/);
   f.calls.length = 0;
-  fs.writeFileSync(f.env.PROMPTDRIFT_REPORT, JSON.stringify({error: {}, exit_code: 2}));
+  fs.writeFileSync(f.env.PROMPTDRIFT_REPORT, JSON.stringify({
+    error: {type: 'invalid_report'}, exit_code: 3,
+  }));
   await publish(f);
   assert.deepEqual(f.calls, []);
+});
+
+test('PR comments publish the prepared sanitized summary, not arbitrary report fields', async t => {
+  const f = fixture(t, {PROMPTDRIFT_COMMENT: 'true'});
+  f.context.eventName = 'pull_request';
+  f.context.payload.pull_request = {number: 8, head: {repo: {fork: false, full_name: 'owner/repository'}}};
+  fs.writeFileSync(f.env.PROMPTDRIFT_REPORT, JSON.stringify({
+    counts: {PASS: 0, WARN: 0, FAIL: 1, ERROR: 0},
+    raw_output: 'PRIVATE raw provider response @everyone',
+    tests: [{prompt: 'PRIVATE prompt', nested: {output: 'PRIVATE output'}}],
+  }));
+  await publish(f);
+  const body = f.calls.find(call => call.method === 'createComment').args.body;
+  assert.match(body, /\| FAIL \| 1 \|/);
+  assert.doesNotMatch(body, /PRIVATE|@everyone/);
 });
 
 test('same-repository PR comment keeps legacy marker and deduplicates through pagination', async t => {
