@@ -1,0 +1,7 @@
+{
+  "model": "llama3.2:quantized",
+  "response": "30 days PRIVATE_OLLAMA_OUTPUT_SENTINEL",
+  "done": true,
+  "prompt_eval_count": 7,
+  "eval_count": 4
+}

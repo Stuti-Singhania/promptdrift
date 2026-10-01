@@ -1,0 +1,6 @@
+{
+  "model": {"name": "llama3.2"},
+  "response": "PRIVATE_MALFORMED_OLLAMA_OUTPUT",
+  "prompt_eval_count": "not-a-count",
+  "eval_count": {"value": 4}
+}
