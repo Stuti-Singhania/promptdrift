@@ -77,6 +77,16 @@ No API key is needed — Ollama runs locally.
 | `Ollama request failed: HTTPStatusError` | Model not pulled | `ollama pull <model>` |
 | Slow responses | Large model on limited hardware | Use a smaller model like `llama3.2:1b` |
 
+
+### Supported response shape
+
+The adapter sends a non-streaming request to the Generate API and requires a
+string `response` field. The returned `model`, `prompt_eval_count`, and
+`eval_count` fields are optional; each absent field remains unknown. Malformed values produce a safe provider error. The
+Chat API `message` envelope, streamed JSON-lines responses, and non-text
+completions are unsupported. Other response fields are ignored and are never
+copied into monitoring history.
+
 ## Mock
 
 A deterministic local provider for testing and onboarding. It echoes the rendered prompt back as the output — no network calls, no API keys.

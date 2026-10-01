@@ -1,0 +1,5 @@
+{
+  "model": "llama3.2:latest",
+  "message": {"role": "assistant", "content": "PRIVATE_CHAT_RESPONSE"},
+  "done": true
+}
