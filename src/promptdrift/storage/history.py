@@ -10,7 +10,6 @@ from pathlib import Path
 from promptdrift.errors import PromptDriftError
 from promptdrift.models.monitor import MonitorReport
 
-
 HISTORY_SCHEMA_VERSION = 1
 
 
