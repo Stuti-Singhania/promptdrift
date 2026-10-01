@@ -1,8 +1,8 @@
 """Comprehensive tests for all deterministic assertion evaluators."""
 
 import pytest
+from pydantic import ValidationError
 
-from promptdrift.errors import EvaluationError
 from promptdrift.evaluators import evaluate_assertion
 from promptdrift.models.result import ModelResponse
 from promptdrift.models.test import Assertion
@@ -108,8 +108,8 @@ class TestRegex:
         assert result.passed
 
     def test_invalid_regex_raises_error(self):
-        with pytest.raises(EvaluationError, match="Invalid regex"):
-            evaluate_assertion(Assertion(type="regex", value=r"[unclosed"), response())
+        with pytest.raises(ValidationError, match="Invalid regex"):
+            Assertion(type="regex", value=r"[unclosed")
 
 
 # --- not_regex ---
@@ -125,8 +125,8 @@ class TestNotRegex:
         assert not result.passed
 
     def test_invalid_regex_raises_error(self):
-        with pytest.raises(EvaluationError, match="Invalid regex"):
-            evaluate_assertion(Assertion(type="not_regex", value=r"(unclosed"), response())
+        with pytest.raises(ValidationError, match="Invalid regex"):
+            Assertion(type="not_regex", value=r"(unclosed")
 
 
 # --- json_valid ---
@@ -293,12 +293,13 @@ class TestCost:
         result = evaluate_assertion(Assertion(type="cost_usd", value=0.01), response(cost=0.0))
         assert result.passed
 
-    def test_none_cost_treated_as_zero(self):
+    def test_none_cost_cannot_satisfy_a_limit(self):
         resp = ModelResponse(
             output="x", latency_ms=1, model="t", provider="mock", estimated_cost_usd=None
         )
         result = evaluate_assertion(Assertion(type="cost_usd", value=0.01), resp)
-        assert result.passed
+        assert not result.passed
+        assert result.actual is None
 
 
 # --- unsupported ---

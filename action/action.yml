@@ -1,144 +1,107 @@
 name: PromptDrift
-description: CI regression testing for LLM prompts with Impact Radius analysis
+description: Behavioral prompt checks and opt-in repeated-sample drift monitoring
 author: PromptDrift contributors
 inputs:
+  mode:
+    description: Execution mode, check or monitor
+    required: false
+    default: check
   config:
-    description: Path to promptdrift.yaml
+    description: Configuration path, relative to working-directory
     required: false
     default: promptdrift.yaml
   working-directory:
-    description: Directory in which to run PromptDrift
+    description: Directory in which to install and run PromptDrift (relative to the workspace)
     required: false
     default: .
   version:
-    description: PromptDrift package version or spec
+    description: Single pip package spec or local project path (used only when install is true)
     required: false
     default: promptdrift-ci
-  base-ref:
-    description: Git base ref for selective check (e.g. origin/main). Auto-detected on PRs.
-    required: false
-    default: ''
-  upload-report:
-    description: Generate a JSON report file for later artifact upload
+  install:
+    description: Install the version spec; set false to use an already installed CLI
     required: false
     default: 'true'
+  base-ref:
+    description: Git base ref for selective check; auto-detected on PRs and ignored in monitor mode
+    required: false
+    default: ''
+  samples:
+    description: Samples per test in monitor mode, integer from 1 to 20
+    required: false
+    default: '3'
+  upload-report:
+    description: Upload the JSON report as a workflow artifact
+    required: false
+    default: 'true'
+  artifact-name:
+    description: Artifact name; choose distinct names for multiple Action invocations in one workflow run
+    required: false
+    default: promptdrift-report
   comment:
-    description: Update a single marked PR comment (only same-repository pull requests)
+    description: Update one marked PR comment (same-repository pull_request events only)
     required: false
     default: 'false'
+  create-issue:
+    description: Opt in to deduplicated monitor failure issues on schedule or workflow_dispatch events
+    required: false
+    default: 'false'
+  issue-scope:
+    description: Additional stable alert namespace for jobs sharing a configuration path
+    required: false
+    default: ''
 outputs:
   result:
-    description: PromptDrift JSON report path
+    description: Absolute path to the sanitized JSON report, including on CLI failure
     value: ${{ steps.run.outputs.result }}
+  exit-code:
+    description: CLI exit code (or 2 for Action input/installation/invalid successful JSON errors)
+    value: ${{ steps.run.outputs.exit_code }}
 runs:
   using: composite
   steps:
-    - shell: bash
-      working-directory: ${{ inputs.working-directory }}
+    - name: Run PromptDrift and prepare reports
       id: run
+      shell: bash
       env:
+        PROMPTDRIFT_ACTION_PATH: ${{ github.action_path }}
+        PROMPTDRIFT_MODE: ${{ inputs.mode }}
         PROMPTDRIFT_CONFIG: ${{ inputs.config }}
-        BASE_REF: ${{ inputs.base-ref || github.event.pull_request.base.sha || '' }}
-      run: |
-        python -m pip install --disable-pip-version-check "${{ inputs.version }}"
-        BASE_ARG=""
-        if [ -n "$BASE_REF" ]; then
-          BASE_ARG="--base $BASE_REF"
-        fi
-        set +e
-        promptdrift check --config "$PROMPTDRIFT_CONFIG" $BASE_ARG --json > promptdrift-report.json
-        status=$?
-        set -e
-        python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
-        import json
-        data = json.load(open("promptdrift-report.json", encoding="utf-8"))
-        impact = data.get("impact", {})
-        report = data.get("report", {})
-        total = impact.get("total_scenarios", 0)
-        regressed = impact.get("regressed", 0)
-        improved = impact.get("improved", 0)
-        unchanged = impact.get("unchanged", 0)
-        changed_valid = impact.get("changed_but_valid", 0)
-        not_eval = impact.get("not_evaluated", 0)
-        radius = impact.get("impact_radius_percentage", 0)
-        lat_pct = impact.get("latency_pct_change", 0)
-        cost_pct = impact.get("cost_pct_change", 0)
-        verdict = f"⚠️ {regressed} regression(s) detected" if regressed else "✅ No behavioral regressions"
-        print("## PromptDrift\n")
-        print(verdict)
-        print()
-        print("| Metric | Value |")
-        print("|---|---|")
-        print(f"| Impact radius | {radius}% |")
-        print(f"| Scenarios evaluated | {total - not_eval} / {total} |")
-        print(f"| Regressed | {regressed} |")
-        print(f"| Improved | {improved} |")
-        print(f"| Unchanged | {unchanged} |")
-        print(f"| Changed but valid | {changed_valid} |")
-        if not_eval:
-            print(f"| Not evaluated (unaffected) | {not_eval} |")
-        print(f"| Latency change | {lat_pct:+.1f}% |")
-        print(f"| Cost change | {cost_pct:+.1f}% |")
-        regressions = [s for s in impact.get("scenarios", []) if s.get("classification") == "REGRESSED"]
-        if regressions:
-            print("\n### Regressions\n")
-            for s in regressions:
-                print(f"- `{s['scenario_id']}` — {s.get('details', '')}")
-        PY
-        echo "result=promptdrift-report.json" >> "$GITHUB_OUTPUT"
-        echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+        PROMPTDRIFT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        PROMPTDRIFT_VERSION: ${{ inputs.version }}
+        PROMPTDRIFT_INSTALL: ${{ inputs.install }}
+        PROMPTDRIFT_BASE_REF: ${{ inputs.base-ref || github.event.pull_request.base.sha || '' }}
+        PROMPTDRIFT_SAMPLES: ${{ inputs.samples }}
+        PROMPTDRIFT_ISSUE_SCOPE: ${{ inputs.issue-scope }}
+      run: python "$PROMPTDRIFT_ACTION_PATH/run.py"
     - name: Upload PromptDrift report
-      if: ${{ always() && inputs.upload-report == 'true' }}
+      if: ${{ always() && inputs.upload-report == 'true' && steps.run.outputs.result != '' }}
       uses: actions/upload-artifact@v4
       with:
-        name: promptdrift-report
-        path: ${{ inputs.working-directory }}/promptdrift-report.json
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.run.outputs.result }}
         if-no-files-found: error
-    - name: Update PR comment
-      if: ${{ always() && inputs.comment == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false }}
+    - name: Publish GitHub notification
+      if: ${{ always() && steps.run.outputs.result != '' && ((inputs.comment == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false) || (inputs.create-issue == 'true' && inputs.mode == 'monitor' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && (steps.run.outputs.exit_code == '1' || steps.run.outputs.exit_code == '3'))) }}
       uses: actions/github-script@v7
       env:
+        PROMPTDRIFT_ACTION_PATH: ${{ github.action_path }}
         PROMPTDRIFT_REPORT: ${{ steps.run.outputs.result }}
+        PROMPTDRIFT_SUMMARY: ${{ steps.run.outputs.summary }}
+        PROMPTDRIFT_SCOPE: ${{ steps.run.outputs.scope }}
+        PROMPTDRIFT_EXIT_CODE: ${{ steps.run.outputs.exit_code }}
+        PROMPTDRIFT_MODE: ${{ inputs.mode }}
+        PROMPTDRIFT_COMMENT: ${{ inputs.comment }}
+        PROMPTDRIFT_CREATE_ISSUE: ${{ inputs.create-issue }}
       with:
         script: |
-          const fs = require('fs');
-          const data = JSON.parse(fs.readFileSync(process.env.PROMPTDRIFT_REPORT, 'utf8'));
-          const impact = data.impact || {};
-          const total = impact.total_scenarios || 0;
-          const notEval = impact.not_evaluated || 0;
-          const evaluated = total - notEval;
-          const verdict = impact.regressed > 0
-            ? `⚠️ ${impact.regressed} behavioral regression${impact.regressed > 1 ? 's' : ''} detected`
-            : '✅ No behavioral regressions detected';
-          const rows = [
-            `| Impact radius | ${impact.impact_radius_percentage}% |`,
-            `| Scenarios evaluated | ${evaluated} / ${total} |`,
-            `| Regressed | ${impact.regressed} |`,
-            `| Improved | ${impact.improved} |`,
-            `| Unchanged | ${impact.unchanged} |`,
-            `| Changed but valid | ${impact.changed_but_valid} |`,
-          ];
-          if (notEval) rows.push(`| Not evaluated (unaffected) | ${notEval} |`);
-          rows.push(`| Latency change | ${(impact.latency_pct_change >= 0 ? '+' : '')}${impact.latency_pct_change.toFixed(1)}% |`);
-          rows.push(`| Cost change | ${(impact.cost_pct_change >= 0 ? '+' : '')}${impact.cost_pct_change.toFixed(1)}% |`);
-          const regressions = (impact.scenarios || []).filter(s => s.classification === 'REGRESSED');
-          const regSection = regressions.length
-            ? ['### Regressions', '', ...regressions.map(s => `- \`${s.scenario_id}\` — ${s.details || ''}`), '']
-            : [];
-          const body = [
-            '<!-- promptdrift-report -->',
-            '## PromptDrift', '', verdict, '',
-            '| Metric | Value |', '|---|---|',
-            ...rows, '',
-            ...regSection,
-          ].join('\n');
-          const { owner, repo } = context.repo;
-          const issue_number = context.issue.number;
-          const comments = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number});
-          const existing = comments.find(c => c.user.type === 'Bot' && c.body.includes('<!-- promptdrift-report -->'));
-          if (existing) await github.rest.issues.updateComment({owner, repo, comment_id: existing.id, body});
-          else await github.rest.issues.createComment({owner, repo, issue_number, body});
+          const path = require('node:path');
+          const publish = require(path.join(process.env.PROMPTDRIFT_ACTION_PATH, 'publish.cjs'));
+          await publish({github, context, core});
     - name: Enforce PromptDrift result
-      if: ${{ always() && steps.run.outputs.exit_code != '0' }}
+      if: ${{ always() }}
       shell: bash
-      run: exit "${{ steps.run.outputs.exit_code }}"
+      env:
+        PROMPTDRIFT_ACTION_PATH: ${{ github.action_path }}
+        PROMPTDRIFT_EXIT_CODE: ${{ steps.run.outputs.exit_code }}
+      run: python "$PROMPTDRIFT_ACTION_PATH/run.py" --enforce

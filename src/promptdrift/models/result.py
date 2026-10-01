@@ -7,16 +7,20 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .provenance import Provenance
+
 
 class ModelResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     output: str
-    input_tokens: int | None = None
-    output_tokens: int | None = None
-    latency_ms: float
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    latency_ms: float = Field(ge=0)
     model: str
     provider: str
-    estimated_cost_usd: float | None = None
+    resolved_model: str | None = None
+    system_fingerprint: str | None = None
+    estimated_cost_usd: float | None = Field(default=None, ge=0)
 
 
 class EvaluationResult(BaseModel):
@@ -41,6 +45,7 @@ class TestRun(BaseModel):
     input_tokens: int | None = None
     output_tokens: int | None = None
     estimated_cost_usd: float | None = None
+    provenance: Provenance | None = None
     evaluations: list[EvaluationResult] = Field(default_factory=list)
     status: Literal["PASS", "WARN", "FAIL"] = "PASS"
 

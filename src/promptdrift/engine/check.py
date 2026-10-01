@@ -6,27 +6,14 @@ from pathlib import Path
 
 from promptdrift.engine.baseline import load_baseline
 from promptdrift.engine.runner import run_suite
+from promptdrift.engine.suite import (  # noqa: F401 (public compatibility)
+    resolve_suite,
+    scenario_to_test_case,
+)
+from promptdrift.errors import ConfigError
 from promptdrift.git import GitContext
 from promptdrift.impact import ImpactRadiusReport, calculate_impact_radius
 from promptdrift.models import Config, RegressionReport, TestCase
-from promptdrift.models.capture import Scenario
-from promptdrift.storage.scenarios import load_scenarios
-
-
-def scenario_to_test_case(
-    scenario: Scenario, default_prompt: str = "prompts/example.txt"
-) -> TestCase:
-    prompt_path = scenario.prompt or default_prompt
-    variables = dict(scenario.variables)
-    if "input" not in variables and scenario.input:
-        variables["input"] = scenario.input
-    return TestCase(
-        id=scenario.id,
-        prompt=prompt_path,
-        variables=variables,
-        assertions=scenario.assertions,
-        thresholds=scenario.thresholds,
-    )
 
 
 def orchestrate_check(
@@ -35,59 +22,43 @@ def orchestrate_check(
     *,
     base_ref: str | None = None,
     scenario_file: Path | None = None,
+    selective: bool = True,
 ) -> tuple[RegressionReport, ImpactRadiusReport]:
+    if base_ref and base_ref.startswith("-"):
+        raise ConfigError("Git base refs must not start with '-'.")
     git = GitContext(root=config_path.parent)
     changed_files = git.get_changed_files(base_ref=base_ref)
 
-    # Collect tests from config and from scenario store
-    tests: list[TestCase] = list(config.tests)
-    scenario_metadata: dict[str, dict] = {}
+    active_config, scenario_metadata = resolve_suite(config, config_path, scenario_file)
+    tests = active_config.tests
 
-    scenarios_path = scenario_file or (
-        config.resolve_path(config_path, config.scenarios.file)
-        if config.scenarios
-        else config_path.parent / ".promptdrift" / "scenarios.json"
-    )
-
-    if scenarios_path.is_file():
-        scenario_lib = load_scenarios(scenarios_path)
-        existing_test_ids = {t.id for t in tests}
-        for sc in scenario_lib.scenarios:
-            if sc.status == "promoted" and sc.id not in existing_test_ids:
-                tc = scenario_to_test_case(sc)
-                tests.append(tc)
-                scenario_metadata[sc.id] = {
-                    "category": sc.category or "general",
-                    "prompt": sc.prompt,
-                }
+    # Validate the baseline before making potentially billable provider calls.
+    baseline_path = config.resolve_path(config_path, config.baseline.path)
+    baseline = load_baseline(baseline_path) if baseline_path.exists() else None
 
     # Selective scenario execution if git changed files are available
     selected_tests = tests
     skipped_ids: set[str] = set()
-    if changed_files:
-        affected: list[TestCase] = []
-        for t in tests:
-            rel_prompt = str(Path(t.prompt)).replace("\\", "/")
-            if any(rel_prompt in cf.replace("\\", "/") for cf in changed_files):
-                affected.append(t)
-        if affected:
-            skipped_ids = {t.id for t in tests} - {t.id for t in affected}
-            selected_tests = affected
+    normalized_changes = {str(Path(item)).replace("\\", "/") for item in changed_files}
+    prompt_names = {str(Path(test.prompt)).replace("\\", "/") for test in tests}
+    # Unknown paths (code, config, scenario definitions or nested Git paths) may affect
+    # every case. Only use the optimization when all changes map exactly to prompts.
+    if selective and normalized_changes and normalized_changes <= prompt_names:
+        affected: list[TestCase] = [
+            test
+            for test in tests
+            if str(Path(test.prompt)).replace("\\", "/") in normalized_changes
+        ]
+        skipped_ids = {t.id for t in tests} - {t.id for t in affected}
+        selected_tests = affected
 
-    active_config = config.model_copy(deep=True)
     active_config.tests = selected_tests
 
     # If no tests exist to run, raise or return empty
     report = run_suite(active_config, config_path)
 
-    baseline_path = config.resolve_path(config_path, config.baseline.path)
-    baseline = None
-    if baseline_path.exists():
-        try:
-            baseline = load_baseline(baseline_path)
-            report.baseline_path = str(baseline_path)
-        except Exception:
-            pass
+    if baseline is not None:
+        report.baseline_path = str(baseline_path)
 
     current_git_sha = git.get_head_sha()
     prompt_paths = [config.resolve_path(config_path, t.prompt) for t in tests]

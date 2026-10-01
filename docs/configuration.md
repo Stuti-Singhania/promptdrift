@@ -5,8 +5,8 @@ PromptDrift is configured through a single `promptdrift.yaml` file. The schema i
 ## Full Annotated Example
 
 ```yaml
-# Schema version (currently only 1)
-version: 1
+# Both 1 and 2 are supported; version 2 supports scenario libraries.
+version: 2
 
 # LLM provider configuration
 provider:
@@ -25,13 +25,8 @@ baseline:
   path: promptdrift.baseline.json  # Relative to config file
   store_raw_output: false          # If true, store raw output in local SQLite
 
-# CI failure policy
-ci:
-  fail_on:
-    - assertion_failure      # Fail the build on assertion violations
-  warn_on:
-    - semantic_change        # Warn when output changes
-    - latency_regression     # Warn on latency increase
+# Failures are controlled by assertion severity and explicit thresholds.
+# No semantic judge or embedding evaluator is enabled implicitly.
 
 # Test cases
 tests:
@@ -61,12 +56,17 @@ tests:
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `version` | `1` | Yes | — | Schema version, must be `1` |
+| `version` | `1` or `2` | No | `1` | Version 1 requires YAML tests; version 2 also supports promoted scenarios |
 | `provider` | object | Yes | — | LLM provider configuration |
 | `defaults` | object | No | See below | Default generation parameters |
 | `baseline` | object | No | See below | Baseline file settings |
-| `ci` | object | No | See below | CI failure/warning policy |
-| `tests` | list | Yes | — | At least one test case required |
+| `ci` | object | No | Legacy defaults | Compatibility-only; customization is rejected, not silently ignored |
+| `tests` | list | Usually | `[]` | Version 1 requires at least one; all run commands reject an empty resolved suite |
+| `scenarios` | object | No | default project library | Version 2: `{file: .promptdrift/scenarios.json}`; explicitly configured missing files are errors |
+| `project` | object | No | — | Optional `{name: my-project}` metadata |
+| `sources` | object | No | — | Legacy prompt-source metadata; does not automatically create tests |
+| `policy` | object | No | `{fail_on: [regression], warn_on: []}` | Only this supported PR-check policy is accepted |
+| `evaluation` | object | No | — | Semantic evaluation is unimplemented; `semantic.enabled: true` is rejected |
 
 ### Provider
 
@@ -92,7 +92,9 @@ tests:
 | `prompt` | string | Yes | — | Path to the Jinja2 prompt template |
 | `variables` | dict | No | `{}` | Key-value pairs passed to the template |
 | `assertions` | list | No | `[]` | Deterministic behavioral contracts |
-| `thresholds` | dict | No | `{}` | `latency_ms` and `cost_usd` limits |
+| `thresholds` | dict | No | `{}` | `latency_ms` and `cost_usd` limits; unknown cost cannot satisfy a limit |
+| `output` | object | No | `{format: text}` | `format: json` adds a JSON-validity contract |
+| `evaluators` | list | No | `[]` | Nonempty lists are rejected; semantic/judge evaluators are not implemented |
 
 ### Assertion
 
@@ -106,8 +108,12 @@ tests:
 
 ## Path Resolution
 
-All paths in the configuration (`prompt`, `baseline.path`) are resolved **relative to the config file**, not the working directory. Absolute paths are used as-is.
+All paths in the configuration (`prompt`, `baseline.path`, `scenarios.file`) are resolved **relative to the config file**, not the working directory. Absolute paths are used as-is.
 
 ## Validation
 
-PromptDrift uses strict Pydantic models with `extra="forbid"`. Any typo or unknown field triggers a clear validation error at load time — not a silent runtime surprise.
+PromptDrift uses Pydantic models with `extra="forbid"`. Unknown fields cause validation errors. Regex syntax, numeric assertion limits and JSON schemas are validated before provider calls. JSON schema references must be local fragments (`#...`); remote resource retrieval is disabled.
+
+The old `ci` defaults (`fail_on: [assertion_failure]`, `warn_on: [semantic_change, latency_regression]`) are accepted only for compatibility, **not a configurable engine policy**. Use `severity: warn` or `severity: fail` and explicit numeric thresholds instead. The defaults never enable semantic evaluation or automatic latency-delta failure.
+
+Monitoring uses these same contracts plus CLI `--samples`/`--no-history`; it does not introduce a competing configuration file. See [monitoring](monitoring.md).

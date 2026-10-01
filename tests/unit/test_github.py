@@ -1,5 +1,7 @@
 """Tests for GitHub markdown report generation."""
 
+from pathlib import Path
+
 from promptdrift.models import RegressionReport, TestRun
 from promptdrift.models.result import EvaluationResult
 from promptdrift.reports.github import MARKER, github_markdown
@@ -118,15 +120,18 @@ class TestGithubMarkdown:
         assert "All assertions passed" in md
 
 
+ACTION_PATH = Path(__file__).resolve().parents[2] / "action" / "action.yml"
+
+
 class TestActionManifest:
     def test_action_defers_failure_until_reports_uploaded(self):
-        manifest = open("action/action.yml", encoding="utf-8").read()
+        manifest = ACTION_PATH.read_text(encoding="utf-8")
         assert "always() && inputs.upload-report" in manifest
 
     def test_action_enforces_result(self):
-        manifest = open("action/action.yml", encoding="utf-8").read()
+        manifest = ACTION_PATH.read_text(encoding="utf-8")
         assert "Enforce PromptDrift result" in manifest
 
     def test_action_blocks_fork_comments(self):
-        manifest = open("action/action.yml", encoding="utf-8").read()
+        manifest = ACTION_PATH.read_text(encoding="utf-8")
         assert "head.repo.fork == false" in manifest

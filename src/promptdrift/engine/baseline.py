@@ -22,7 +22,7 @@ def baseline_from_report(
     prompt_hash: str | None = None,
 ) -> Baseline:
     return Baseline(
-        schema_version=2,
+        schema_version=3,
         promptdrift_version=__version__,
         generated_at=datetime.now(UTC),
         provider={"type": report.provider, "model": report.model},
@@ -32,6 +32,7 @@ def baseline_from_report(
         tests={
             run.test_id: BaselineTest(
                 output_hash=hashlib.sha256(run.output.encode()).hexdigest(),
+                provenance=run.provenance,
                 status=run.status,
                 assertions={
                     evaluation.assertion: evaluation.passed for evaluation in run.evaluations
@@ -72,7 +73,7 @@ def write_baseline(
         report, prompt_revision=prompt_revision, git_sha=git_sha, prompt_hash=prompt_hash
     )
     content = baseline_obj.model_dump_json(indent=2) + "\n"
-    path.write_text(content, encoding="utf-8")
+    atomic_write(path, content)
 
 
 def load_baseline(path: Path) -> Baseline:
@@ -90,5 +91,32 @@ def load_baseline(path: Path) -> Baseline:
                 if "metadata" not in test_data:
                     test_data["metadata"] = {}
         return Baseline.model_validate(data)
-    except (ValidationError, json.JSONDecodeError) as exc:
-        raise BaselineError(f"Invalid baseline {path.name}: {exc}") from exc
+    except (ValidationError, json.JSONDecodeError, AttributeError, TypeError, OSError) as exc:
+        raise BaselineError(
+            f"Invalid baseline {path.name} or unreadable file ({type(exc).__name__})."
+        ) from exc
+
+
+def atomic_write(path: Path, content: str) -> None:
+    """Keep the previous canonical file intact if serialization/writing is interrupted."""
+    import os
+    import tempfile
+
+    temporary = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except OSError as exc:
+        raise BaselineError(
+            f"Unable to write baseline {path.name} ({type(exc).__name__})."
+        ) from exc
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)

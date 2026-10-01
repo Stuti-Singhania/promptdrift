@@ -24,7 +24,7 @@ export OPENAI_API_KEY="sk-..."
 
 ### Compatible APIs
 
-Any API that implements the OpenAI Chat Completions format works — set `base_url` to the provider's endpoint:
+Use endpoints implementing the supported text Chat Completions request/response shape. Compatibility depends on support for `temperature`, `max_tokens` and string message content; tool-only/multimodal responses and every model variant are not supported. Set `base_url` explicitly:
 
 ```yaml
 provider:
@@ -79,7 +79,7 @@ No API key is needed — Ollama runs locally.
 
 ## Mock
 
-A deterministic, zero-latency provider for testing and onboarding. It echoes the rendered prompt back as the output — no network calls, no API keys.
+A deterministic local provider for testing and onboarding. It echoes the rendered prompt back as the output — no network calls, no API keys.
 
 ### Configuration
 
@@ -93,7 +93,7 @@ provider:
 
 - **Output:** The prompt text, whitespace-normalized and trimmed.
 - **Tokens:** Estimated from word count.
-- **Latency:** Near-zero (measured but typically <1ms).
+- **Latency:** Measured local processing time; no performance guarantee.
 - **Cost:** Always `$0.00`.
 
 ### Use Cases
@@ -101,6 +101,12 @@ provider:
 - Running `promptdrift init` without any setup
 - Testing the PromptDrift workflow in CI without spending API credits
 - Writing and debugging assertions before connecting a real provider
+
+## Monitoring behavior and limits
+
+OpenAI-compatible and Ollama adapters normalize malformed response payloads into safe `ProviderError`s rather than treating missing text as a successful empty answer. The engine records optional provider-returned resolved model IDs/system fingerprints as hashes, without assuming they prove a model update. OpenAI-compatible cost is unknown unless future explicit pricing is implemented; configured cost limits therefore cannot silently pass.
+
+Timeouts are currently fixed at 60 seconds (OpenAI) and 90 seconds (Ollama). Calls are sequential with no automatic retries. Repeated monitoring probes are explicitly budgeted observations, not hidden retries. No hosted provider was exercised by the offline test suite.
 
 ## Adding a Custom Provider
 

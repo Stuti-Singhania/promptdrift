@@ -8,9 +8,6 @@ defaults:
   max_output_tokens: 500
 baseline:
   path: promptdrift.baseline.json
-ci:
-  fail_on: [assertion_failure]
-  warn_on: [semantic_change, latency_regression]
 tests:
   - id: example
     prompt: prompts/example.txt

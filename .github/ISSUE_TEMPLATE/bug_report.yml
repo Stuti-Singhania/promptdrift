@@ -6,7 +6,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting a bug! Please fill in as much detail as you can.
+        Thanks for reporting a bug. Do not include credentials, private prompts or raw provider output.
+        Monitoring diagnoses are observations, not proof of a vendor model update. Use synthetic reproductions where possible.
 
   - type: textarea
     id: description
@@ -41,9 +42,15 @@ body:
     attributes:
       label: PromptDrift Version
       description: Output of `promptdrift version`
-      placeholder: "0.1.0"
+      placeholder: "Output of promptdrift version"
     validations:
       required: true
+
+  - type: textarea
+    id: monitoring
+    attributes:
+      label: Monitoring evidence (if applicable)
+      description: Include the diagnosis, sample/failure counts, baseline schema version and which fingerprints changed. Remove private identifiers/paths. Do not attach raw test/check JSON without review.
 
   - type: input
     id: python

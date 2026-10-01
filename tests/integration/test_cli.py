@@ -1,9 +1,12 @@
 """Integration tests for the PromptDrift CLI including capture, learn, check, promote."""
 
+import io
 import json
 
+from rich.console import Console
 from typer.testing import CliRunner
 
+import promptdrift.cli as cli
 from promptdrift.cli import app
 
 runner = CliRunner()
@@ -15,6 +18,19 @@ class TestInitCommand:
         assert result.exit_code == 0
         assert (tmp_path / "promptdrift.yaml").is_file()
         assert (tmp_path / "prompts" / "example.txt").is_file()
+
+    def test_creates_missing_target_directory(self, tmp_path):
+        target = tmp_path / "new-project"
+        result = runner.invoke(app, ["init", "--directory", str(target)])
+        assert result.exit_code == 0, result.output
+        assert (target / "promptdrift.yaml").is_file()
+        assert (target / "prompts" / "example.txt").is_file()
+
+    def test_missing_target_is_initialized_on_a_non_utf_console(self, tmp_path, monkeypatch):
+        stream = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+        monkeypatch.setattr(cli, "console", Console(file=stream, color_system=None))
+        result = runner.invoke(app, ["init", "--directory", str(tmp_path / "new-project")])
+        assert result.exit_code == 0, result.output
 
     def test_refuses_overwrite_without_force(self, tmp_path):
         runner.invoke(app, ["init", "--directory", str(tmp_path)])
@@ -141,7 +157,9 @@ class TestVersionCommand:
     def test_prints_version(self):
         result = runner.invoke(app, ["version"])
         assert result.exit_code == 0
-        assert "0.3.1" in result.output
+        from promptdrift import __version__
+
+        assert __version__ in result.output
 
 
 class TestNewLifecycleCommands:

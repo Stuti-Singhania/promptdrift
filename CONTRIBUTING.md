@@ -12,9 +12,10 @@ cd promptdrift
 # Install with development dependencies
 pip install -e ".[dev]"
 
-# Verify the setup
-pytest
-ruff check src tests
+# Verify the setup (Node 22+ and Git are also needed for Action/Git fixtures)
+python -m pytest -q
+python -m ruff check src tests action
+python -m ruff format --check src tests action
 ```
 
 ## Project Structure
@@ -63,11 +64,12 @@ pytest --cov=promptdrift --cov-report=term-missing
 PromptDrift uses [Ruff](https://docs.astral.sh/ruff/) for linting and formatting:
 
 ```bash
-# Check for lint errors
-ruff check src tests
+# Check lint and format
+ruff check src tests action
+ruff format --check src tests action
 
-# Auto-fix what's possible
-ruff check --fix src tests
+# Format only files you change
+ruff format path/to/changed_file.py
 ```
 
 **Style guidelines:**
@@ -109,9 +111,22 @@ Follow the existing patterns:
 ### 5. Verify
 
 ```bash
-pytest
-ruff check src tests
+python -m pytest -q
+python -m ruff check src tests action
+python -m ruff format --check src tests action
+python -m build
+python -m twine check dist/*
 ```
+
+Tests use a temporary working directory and home. Do not remove that isolation to make a test pass; use `Path(__file__)` for source fixtures and `tmp_path` for generated projects. Offline tests need no paid API credentials. Node publication tests skip locally if Node is missing, but CI requires it. No repository-wide type checker is currently configured; do not report a typecheck as passed.
+
+Try `promptdrift demo` and an installed-wheel starter → baseline → monitor → history flow outside the checkout. A synthetic failure is evidence that the fixture works, not a real model benchmark. Changes to diagnosis must test confounding inputs, missing evidence and provider failure, not only the positive drift case.
+
+### Release preparation
+
+The package version is defined once in `src/promptdrift/__init__.py` and read by Hatch. Current 0.4.0 changes are unreleased. Build both wheel and sdist, inspect their contents, install the wheel in a clean environment, and verify `promptdrift version` and `demo`. A tag must match the package version. The release workflow verifies tests/static checks/build metadata before using the configured PyPI trusted publisher for **promptdrift-ci**; publisher/environment settings must be configured by a maintainer.
+
+Do not tag/publish or enable paid schedules as a side effect of a contribution.
 
 ### 6. Submit a Pull Request
 
@@ -123,8 +138,8 @@ ruff check src tests
 
 - **Providers are isolated.** A new provider is one file + a type registration. It should never import engine internals.
 - **Assertions are pure functions.** Each evaluator takes an assertion and a response, returns a result. No side effects.
-- **Config compatibility is sacred.** Never break existing `promptdrift.yaml` files. New fields must have defaults.
-- **Privacy by default.** Never log, store, or transmit raw prompt content unless the user explicitly opts in.
+- **Compatibility must be explicit.** New fields should have defaults. Document/test migrations, and reject unsupported behavior rather than silently accepting misleading configuration.
+- **Privacy boundaries are explicit.** Provider calls necessarily transmit rendered prompts. Monitor artifacts must exclude raw content; legacy JSON/HTML exports have different privacy boundaries. Test those boundaries rather than promising blanket anonymity.
 
 ## Reporting Bugs
 
@@ -134,6 +149,13 @@ Use the [bug report template](https://github.com/tanveer-arch/promptdrift/issues
 - OS and provider
 - Steps to reproduce
 - Expected vs actual behavior
+
+## Focused contribution opportunities
+
+See the [contribution candidates](docs/roadmap.md) for ten scoped, testable
+starting points. Each gives a problem, scope, acceptance criteria, suggested
+labels/difficulty and relevant files. They are proposals, not fabricated GitHub
+issues or promised deliveries.
 
 ## Questions?
 

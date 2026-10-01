@@ -7,6 +7,8 @@ import re
 from typing import Any
 
 from jsonschema import ValidationError, validate
+from referencing import Registry
+from referencing.exceptions import Unresolvable
 
 from promptdrift.errors import EvaluationError
 from promptdrift.models.result import EvaluationResult, ModelResponse
@@ -80,7 +82,7 @@ def evaluate_assertion(assertion: Assertion, response: ModelResponse) -> Evaluat
         if kind == "json_valid":
             return _result(assertion, True, "valid JSON", text, "Output is valid JSON.")
         try:
-            validate(payload, assertion.schema_)
+            validate(payload, assertion.schema_, registry=Registry())
             return _result(
                 assertion, True, assertion.schema_, payload, "JSON matches the required schema."
             )
@@ -88,6 +90,8 @@ def evaluate_assertion(assertion: Assertion, response: ModelResponse) -> Evaluat
             return _result(
                 assertion, False, assertion.schema_, payload, f"JSON schema failed: {exc.message}"
             )
+        except Unresolvable as exc:
+            raise EvaluationError("JSON schema references could not be resolved locally.") from exc
     if kind in {"min_length", "max_length"}:
         actual, expected = len(text), int(value)
         passed = actual >= expected if kind == "min_length" else actual <= expected
@@ -102,7 +106,9 @@ def evaluate_assertion(assertion: Assertion, response: ModelResponse) -> Evaluat
             else f"Output length must be {comparison} {expected} characters.",
         )
     if kind == "max_tokens":
-        actual, expected = response.output_tokens or len(text.split()), int(value)
+        if response.output_tokens is None:
+            return _result(assertion, False, int(value), None, "Output token usage is unavailable.")
+        actual, expected = response.output_tokens, int(value)
         return _result(
             assertion,
             actual <= expected,
@@ -120,7 +126,9 @@ def evaluate_assertion(assertion: Assertion, response: ModelResponse) -> Evaluat
             "Latency limit met." if actual <= expected else "Latency limit exceeded.",
         )
     if kind == "cost_usd":
-        actual, expected = response.estimated_cost_usd or 0.0, float(value)
+        if response.estimated_cost_usd is None:
+            return _result(assertion, False, float(value), None, "Estimated cost is unavailable.")
+        actual, expected = response.estimated_cost_usd, float(value)
         return _result(
             assertion,
             actual <= expected,

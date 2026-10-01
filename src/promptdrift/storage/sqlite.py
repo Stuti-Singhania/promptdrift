@@ -78,6 +78,12 @@ def record_report(
             for test in stored.tests:
                 test.input = "[suppressed]"
                 test.output = "[suppressed]"
+                for evaluation in test.evaluations:
+                    evaluation.expected = None
+                    evaluation.actual = None
+                    evaluation.reason = (
+                        "Passed." if evaluation.passed else "Contract not satisfied."
+                    )
         with _get_db(path) as db:
             db.execute(
                 "INSERT INTO runs VALUES (?, ?, ?, ?)",

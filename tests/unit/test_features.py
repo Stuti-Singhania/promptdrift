@@ -1,5 +1,7 @@
 """Unit tests for Git-native features, capture, learning, suggestions, and impact radius."""
 
+import subprocess
+
 from promptdrift.engine.discovery import discover_scenarios
 from promptdrift.engine.suggest import suggest_assertions_for_scenario
 from promptdrift.git import GitContext
@@ -11,8 +13,28 @@ from promptdrift.storage.sqlite import get_interactions, purge_storage, record_i
 
 
 class TestGitContext:
-    def test_git_repo_detection(self):
-        ctx = GitContext()
+    def test_git_repo_detection(self, tmp_path):
+        subprocess.run(
+            ["git", "init", "-b", "main", str(tmp_path)], check=True, capture_output=True
+        )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(tmp_path),
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "test",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        ctx = GitContext(root=tmp_path)
         assert ctx.is_git_repo() is True
         assert ctx.get_current_branch() is not None
 

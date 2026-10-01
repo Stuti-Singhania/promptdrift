@@ -1,117 +1,58 @@
-# Getting Started
+# Getting started
 
-This guide walks you through installing PromptDrift, running your first test, and creating a baseline — all without an API key.
-
-## Prerequisites
-
-- **Python 3.11+** — check with `python --version`
-- **pip** — included with Python
-
-## Install
+Use Python 3.11+ and preferably a virtual environment. The published package is named **`promptdrift-ci`**, while the CLI/import is `promptdrift`.
 
 ```bash
-pip install promptdrift
+python -m pip install promptdrift-ci
 ```
 
-Or install from source for development:
+The monitoring features documented here are **unreleased 0.4 development features**. Install the checkout to try them:
 
 ```bash
 git clone https://github.com/tanveer-arch/promptdrift.git
 cd promptdrift
-pip install -e ".[dev]"
+python -m pip install .
+promptdrift demo
 ```
 
-## Create a Starter Project
+The demo uses a temporary loopback HTTP fixture: accepted response first, deliberately broken response next, same request/configuration. It demonstrates the actual adapter/diagnosis flow without external services or API keys, not a real model incident.
+
+## A working project in minutes
 
 ```bash
-mkdir my-prompts && cd my-prompts
-promptdrift init
-```
-
-This creates two files:
-
-| File | Purpose |
-| --- | --- |
-| `promptdrift.yaml` | Test configuration with one example test |
-| `prompts/example.txt` | A Jinja2 prompt template |
-
-The starter project uses the **mock provider**, so no API key is needed.
-
-## Run Your First Test
-
-```bash
-promptdrift test
-```
-
-You should see:
-
-```
-┌───────────────────────────────────┐
-│          PromptDrift              │
-├──────┬────────┬───────────────────┤
-│ Test │ Status │ Reason            │
-├──────┼────────┼───────────────────┤
-│hello │ PASS   │All assertions pass│
-└──────┴────────┴───────────────────┘
-1 passed - 0 warnings - 0 failed
-```
-
-## Capture a Baseline
-
-Once you're happy with the output, lock it in:
-
-```bash
-promptdrift baseline
-git add promptdrift.baseline.json
-git commit -m "Add PromptDrift baseline"
-```
-
-The baseline stores hashes and metrics — never raw prompt content or secrets.
-
-## Compare Against the Baseline
-
-After changing a prompt, run:
-
-```bash
-promptdrift diff
-```
-
-PromptDrift compares the new output against the baseline and reports whether any **behavioral contracts** were violated. A wording change alone does not cause a failure — only a broken assertion does.
-
-## Switch to a Real Provider
-
-Edit `promptdrift.yaml` to use OpenAI or Ollama:
-
-```yaml
-provider:
-  type: openai
-  model: gpt-4.1-mini
-  api_key_env: OPENAI_API_KEY
-```
-
-Set the environment variable:
-
-```bash
-export OPENAI_API_KEY="sk-..."
-```
-
-Then re-run `promptdrift test`.
-
-## Check Your Setup
-
-```bash
+promptdrift init --directory my-prompts
+cd my-prompts
 promptdrift doctor
+promptdrift test
+promptdrift baseline
+promptdrift monitor --samples 3
+promptdrift history --json
 ```
 
-This validates your config, prompt files, API keys, and baseline health — useful before setting up CI.
+`init` creates `promptdrift.yaml` and `prompts/example.txt`; it reports existing prompt files but does not automatically author coverage for them. Its mock provider echoes the rendered prompt, so this sequence should pass without an API key.
 
-## Next Steps
+Baseline paths and prompt paths are relative to the config. The monitoring database stays beside that config under `.promptdrift/`, even when commands run from another directory.
 
-- [Configuration reference](configuration.md) — every field in `promptdrift.yaml`
-- [Assertions](assertions.md) — all supported contract types
-- [GitHub Action](github-action.md) — run PromptDrift on every PR
-- [Providers](providers.md) — OpenAI, Ollama, and mock setup
+## Real monitoring
 
-## Publishing a Release
+1. Choose a few stable, representative cases, excluding private production data.
+2. Edit the provider and contracts; see [providers](providers.md) and the [README support example](../README.md).
+3. Set the provider API key through your environment/secret manager, never in YAML.
+4. Run `promptdrift test` and review the behavior locally.
+5. Run `promptdrift baseline --force` deliberately, then inspect and commit the new reference. The command makes fresh calls; it does not accept the exact prior test run.
+6. Schedule `promptdrift monitor --samples 3`, budgeting three calls per case per run.
 
-Configure this repository as a PyPI trusted publisher for the `promptdrift` project, then push a `v*` tag. The release workflow tests, lints, builds, and publishes with GitHub's OIDC token; no long-lived PyPI token is stored in the repository.
+Switching from mock to a real model changes the provider fingerprint. Do not interpret that as a silent upstream drift incident; establish a new reviewed baseline.
+
+## Reading a failure
+
+`observed_model_drift` means repeated behavioral contract failures under matching **recorded inputs**. It does not prove changed weights or unchanged application code. Mixed successes/failures are `stochastic_behavior`; provider errors have a separate infrastructure exit code. A valid wording change alone does not fail CI.
+
+Keep the old baseline during investigation. Use `history`, provider status information, and repeated manual checks before deciding to accept new behavior. See [monitoring rules](monitoring.md).
+
+## CI and further reading
+
+- [GitHub Action](github-action.md): PR checks, scheduled monitoring and optional deduplicated issues.
+- [Configuration](configuration.md): supported options and deliberately rejected features.
+- [Baselines](baselines.md): acceptance, migration and archives.
+- [Contributing](../CONTRIBUTING.md): offline tests, development setup and release checks.

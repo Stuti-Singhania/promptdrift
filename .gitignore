@@ -8,6 +8,11 @@ build/
 *.egg-info/
 .promptdrift/*.db
 .promptdrift/*.sqlite
+.promptdrift/*.sqlite3*
+.promptdrift/baseline_history/
+.promptdrift/scenarios.json
+promptdrift-report.json
+__agent__/
 promptdrift-report.html
 *.db
 .venv/

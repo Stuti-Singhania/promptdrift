@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from .provenance import Provenance
 
 
 class BaselineTest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     output_hash: str
+    provenance: Provenance | None = None
     status: str
     assertions: dict[str, bool]
     metrics: dict[str, float | int | None]
@@ -20,7 +23,7 @@ class BaselineTest(BaseModel):
 
 class Baseline(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    schema_version: int = 2
+    schema_version: Literal[1, 2, 3] = 3
     promptdrift_version: str
     generated_at: datetime
     provider: dict[str, str]

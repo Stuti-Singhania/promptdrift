@@ -4,7 +4,7 @@
 
 ### What is PromptDrift?
 
-PromptDrift is a CLI tool and GitHub Action for regression-testing LLM prompts. It lets you define behavioral contracts (assertions) for your prompts and automatically checks them in CI — so you catch unintended behavior changes before they reach production.
+PromptDrift is a Python CLI and GitHub Action for behavioral drift checks, including fresh probes when your prompts have not changed. Define contracts, review a baseline and monitor it over time. It also supports PR prompt-regression checks. Diagnosis labels are evidence, not proof of a vendor update.
 
 ### How is PromptDrift different from a regular diff?
 
@@ -42,7 +42,7 @@ The test runs normally against assertions. If it passes, the status is set to WA
 
 ### Can I use PromptDrift without a baseline?
 
-Yes. Baselines are optional. Without one, `promptdrift test` evaluates all assertions and exits with code 1 if any fail. Baselines add regression detection on top.
+For `test` and `check`, yes: contracts can run without a baseline. **`monitor` requires a valid accepted baseline**, because its purpose is historical comparison. Empty suites are errors, not passing runs.
 
 ## Privacy and Security
 
@@ -56,11 +56,11 @@ No. API keys are read exclusively from environment variables. The config file on
 
 ### What's in the baseline file?
 
-Output hashes (SHA-256), assertion results, and performance metrics. Raw outputs and prompt text are **not** stored in the baseline. It's safe to commit to public repositories.
+Output hashes, contract results, metrics and per-case provenance hashes. Raw outputs/prompts are not stored. Hashes are not encryption; review IDs, model names and other metadata before committing publicly.
 
 ### Is local history safe?
 
-The SQLite history at `~/.promptdrift/promptdrift.db` suppresses raw prompts and outputs by default. Set `baseline.store_raw_output: true` to keep them — useful for debugging but only store locally.
+Legacy history at `~/.promptdrift/promptdrift.db` suppresses prompts, outputs and evaluation payloads by default; `baseline.store_raw_output: true` opts into retaining them. Monitoring history is separate, project-local and always privacy-minimized. Neither database is encrypted. See [monitoring](monitoring.md).
 
 ## CI and GitHub
 
@@ -74,15 +74,19 @@ Never expose API secrets to code from a fork. See [GitHub Action docs](github-ac
 
 ### How do I pin the PromptDrift version in CI?
 
-```yaml
-- uses: tanveer-arch/promptdrift/action@v1
-  with:
-    version: "promptdrift==0.1.0"
-```
+Pin an existing reviewed Action commit/tag and a matching published **`promptdrift-ci`** version. Do not use an invented `@v1` release or install a different package named `promptdrift`. New monitoring is currently unreleased: use the source-install workflow in [the Action guide](github-action.md).
 
 ### Can I run multiple config files?
 
 Not in a single invocation. Run `promptdrift test -c config1.yaml` and `promptdrift test -c config2.yaml` separately, or use multiple workflow jobs.
+
+### Does monitoring prove the model changed?
+
+No. At least two repeated behavioral failures under matching recorded inputs can yield `observed_model_drift`. A single accepted baseline, randomness, routing, hidden system state, unobserved application context and dependency changes all limit attribution. There is no confidence percentage or statistical-significance claim. See [the rules](monitoring.md).
+
+### Does PromptDrift support semantic judges?
+
+No usable semantic or LLM-judge suite evaluator is implemented. Nonempty `evaluators` and `evaluation.semantic.enabled: true` are rejected. Do not infer support from legacy scaffolding or old changelog wording.
 
 ## Troubleshooting
 

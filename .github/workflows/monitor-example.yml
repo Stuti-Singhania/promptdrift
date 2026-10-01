@@ -1,0 +1,49 @@
+name: PromptDrift monitor (opt-in example)
+
+on:
+  workflow_dispatch:
+  # Opt in only after committing a reviewed baseline and setting the repository
+  # variable PROMPTDRIFT_MONITOR_ENABLED=true. Schedules use the default branch.
+  # schedule:
+  #   - cron: '17 6 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  # Keep a stable group for the config/alert scope, not the run ID.
+  group: promptdrift-monitor-example
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    if: ${{ vars.PROMPTDRIFT_MONITOR_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Use this checkout's Action AND package: monitor may not exist in a
+      # published PyPI version or an older Action tag. No unreleased pin is used.
+      # In another repo, pin a released Action commit and package version that
+      # both implement monitor, or check out this source into a separate folder.
+      - uses: ./action
+        with:
+          version: .
+          mode: monitor
+          config: examples/monitoring/mock.yml
+          samples: '3'
+          create-issue: 'true'
+          issue-scope: daily-example
+      # Mock is free/offline. To monitor a real provider, deliberately select
+      # examples/monitoring/openai.yml, provision its reviewed baseline and add
+      # env: {OPENAI_API_KEY: '${{ secrets.OPENAI_API_KEY }}'} to the Action step.
+      # Real providers incur up to samples * cases requests per scheduled run.
+      # Never add pull_request_target or untrusted PR checkout to this workflow.

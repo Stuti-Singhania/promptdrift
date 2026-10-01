@@ -4,6 +4,29 @@ All notable changes to PromptDrift are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — 0.4.0
+
+### Added
+- `monitor`: fresh full-suite repeated probes independent of Git changes, with evidence-based diagnoses and explicit provider-error handling.
+- Schema-v3 baselines with per-case request, generation, provider and contract fingerprints; v1/v2 loading remains supported without invented provenance.
+- `history`: bounded project-local monitoring history; `demo`: a temporary loopback-only synthetic drift incident through the real adapter.
+- Opt-in Action monitor mode and deduplicated scheduled/manual GitHub failure issues; synthetic and real-provider monitoring examples.
+- Source-linked ecosystem comparison and documented attribution/privacy limits.
+
+### Fixed
+- Isolated tests from the real home directory and working tree.
+- Corrupt baselines and empty suites no longer become silent green checks; baseline creation preflights overwrite protection and refuses failed contracts without explicit approval.
+- Unified YAML/promoted-scenario suite resolution; acceptance always evaluates the full suite. Conservative Git filtering no longer skips cases when configuration/code paths also change.
+- Atomic canonical baseline replacement and project-relative archives.
+- Unknown cost/token usage no longer passes as zero or a word-count estimate; invalid numeric/regex/schema contracts fail early. Remote JSON schema retrieval is disabled.
+- `output.format: json` now enforces JSON validity. Unsupported semantic/CI policy customization is rejected instead of silently ignored.
+- Malformed provider payloads become safe provider errors. Legacy suppressed history also removes evaluation payloads and potentially sensitive reasons.
+- Action shell/input handling, nested working-directory reports, failure artifact preservation and JSON validation.
+
+### Development
+- Expanded offline engine/CLI and Action behavior tests, formatter/build/wheel smoke checks, single-source package version and explicit sdist contents.
+- Monitoring remains heuristic, not statistically calibrated; semantic embeddings/LLM judges are not usable suite features. Earlier changelog wording about semantic support described scaffolding, not a working evaluator integration.
+
 ## [0.3.1] - 2026-09-26
 
 ### Fixed

@@ -4,15 +4,48 @@ permissions:
   contents: read
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python-version: ["3.11", "3.12", "3.13"]
+        include:
+          - os: windows-latest
+            python-version: "3.13"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - run: python -m pip install '.[dev]'
+      # pytest also executes the local Node GitHub-publication fixture suite.
       - run: pytest --tb=short -q
-      - run: ruff check src tests
+      - run: ruff check src tests action
+      - run: ruff format --check src tests action
+      - run: node --check action/publish.cjs
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install build twine
+      - run: python -m build
+      - run: python -m twine check dist/*
+      - run: python -m pip install dist/*.whl
+      - name: Smoke-test installed wheel outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: |
+          promptdrift --help
+          promptdrift monitor --help
+          promptdrift demo --json
+          promptdrift init --directory smoke
+          cd smoke
+          promptdrift baseline
+          promptdrift monitor --samples 2 --json
+          promptdrift history --json

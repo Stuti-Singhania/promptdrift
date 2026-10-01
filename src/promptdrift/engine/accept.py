@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from promptdrift.engine.baseline import baseline_from_report
-from promptdrift.errors import PromptDriftError
+from promptdrift.errors import BaselineError, PromptDriftError
 from promptdrift.impact import ImpactRadiusReport
 from promptdrift.models.baseline import Baseline
 from promptdrift.models.result import RegressionReport
@@ -29,6 +29,12 @@ def selective_accept(
     Returns a new Baseline object merging the accepted changes with the unaccepted
     parts of the current baseline.
     """
+    if scenario_ids is not None:
+        unknown = set(scenario_ids) - {run.test_id for run in report.tests}
+        if unknown:
+            raise BaselineError(
+                "Requested scenarios were not evaluated: " + ", ".join(sorted(unknown))
+            )
     new_baseline_obj = baseline_from_report(report)
 
     # We will build the new tests dictionary by picking either from current_baseline or new_baseline_obj

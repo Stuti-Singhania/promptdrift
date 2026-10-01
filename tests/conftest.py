@@ -2,9 +2,24 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from promptdrift.models.result import EvaluationResult, ModelResponse, RegressionReport, TestRun
+
+
+@pytest.fixture(autouse=True)
+def isolated_workspace(tmp_path, monkeypatch):
+    """Never let offline tests mutate a checkout, real home, or captured traffic."""
+    workspace = tmp_path / "workspace"
+    home = tmp_path / "home"
+    workspace.mkdir()
+    home.mkdir()
+    monkeypatch.chdir(workspace)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
 
 
 @pytest.fixture

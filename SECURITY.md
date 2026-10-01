@@ -1,57 +1,31 @@
-# Security Policy
+# Security policy
 
-## Supported Versions
+## Reporting a vulnerability
 
-| Version | Supported |
-| --- | --- |
-| 0.1.x | ✅ |
+Do not post credentials, private prompts or exploit payloads in public issues. Use [GitHub private vulnerability reporting](https://github.com/tanveer-arch/promptdrift/security/advisories/new) if enabled for this repository. If unavailable, ask the maintainer for a private reporting channel without disclosing the vulnerability publicly. This volunteer project does not promise a response-time SLA.
 
-## Reporting a Vulnerability
+Security fixes target the latest published release and the development branch. There is no promised long-term-support branch. The monitoring changes in 0.4.0 are unreleased; this document is not a third-party security audit.
 
-If you discover a security vulnerability in PromptDrift, please report it responsibly:
+## Boundaries
 
-1. **Do not** open a public issue.
-2. Email the maintainers or use [GitHub's private vulnerability reporting](https://github.com/tanveer-arch/promptdrift/security/advisories/new).
-3. Include a description of the vulnerability, steps to reproduce, and potential impact.
+- **Providers receive prompts.** OpenAI-compatible/Ollama adapters send rendered text to the configured endpoint. Use HTTPS outside trusted loopback/local networks. Treat `base_url`, config files, templates and dependencies as trusted operator inputs; do not run arbitrary PR configuration with provider credentials.
+- **Keys come from environment variables.** YAML selects the variable name, not the credential. Safe provider errors do not include HTTP bodies. Do not put credentials in URLs, model names, IDs, assertion labels or other metadata.
+- **Monitoring reports are minimized.** `monitor` JSON/history exclude raw prompts, responses, contract values and exception bodies. They still contain case/model names, timestamps, paths and diagnosis facts. Review metadata before uploading publicly.
+- **Legacy exports contain raw evidence.** `test/check/diff --json` and HTML reports can include rendered prompts, provider output, expected values and evaluator details. Treat them as sensitive. Legacy local stored reports suppress these payloads by default; `baseline.store_raw_output: true` explicitly retains them.
+- **Capture is a separate opt-in boundary.** Review `CaptureConfig`, sampling, redaction and storage policy before recording traffic. Pattern-based redaction cannot guarantee PII removal. Never assume a learned scenario is safe to commit merely because it came from capture.
+- **Hashes are not encryption/anonymization.** Baselines contain hashes and metadata rather than raw answers. Small/predictable strings can be guessed; repository access controls still matter.
+- **Storage is local, not encrypted.** OS filesystem permissions and CI artifact permissions/retention are your responsibility. Monitoring retains 1,000 local reports. `purge` clears the legacy store, not project monitor databases/archives; deletion is not secure erasure.
+- **Templates are sandboxed, not a resource quota.** Jinja's sandbox and strict undefined variables reduce capability exposure, but untrusted templates/regexes/large schemas can consume CPU or memory. Run untrusted workloads in isolated processes/containers without secrets.
+- **JSON schema validation is offline.** Nonlocal `$ref`/`$dynamicRef`/`$recursiveRef` are rejected and the evaluation registry cannot retrieve remote resources. Review schemas nevertheless; this is not protection against every resource-exhaustion case.
 
-We will acknowledge receipt within 48 hours and provide a timeline for a fix.
+## GitHub Actions
 
-## Security Design
+The composite Action rejects `pull_request_target` execution, passes inputs as environment variables/argument lists rather than interpolated shell code, and suppresses raw stderr/error payloads. Credential-value redaction in the Action is defense in depth, not arbitrary PII detection. Check-mode artifacts may still contain application content.
 
-PromptDrift is designed with security and privacy as core principles:
+PR comments are limited to same-repository pull requests. Optional failure issues are limited to scheduled/manual monitor runs, use fixed marker scopes and require `issues: write`. Use the documented concurrency group to avoid simultaneous initial issue creation. A GitHub token or provider key must never be exposed to untrusted PR code—even same-repository contributors need appropriate trust controls.
 
-### No Telemetry
-PromptDrift does not collect, transmit, or store any analytics or usage data. There is no hosted service, no phone-home behavior, and no third-party tracking.
+Pin reviewed Action revisions and package versions. The Action's optional installation executes the configured package's build/install code; only the workflow maintainer should control that input. Keep paid schedules opt-in and apply job timeouts and artifact-retention policies.
 
-### API Key Handling
-- API keys are **never** read from configuration files — only from environment variables.
-- The config file stores only the **name** of the environment variable (e.g., `api_key_env: OPENAI_API_KEY`).
-- Provider error messages **never** include request bodies, response bodies, or credentials.
-- The `doctor` command checks whether a key is set without printing the value.
+## Reportable concerns
 
-### Baseline Safety
-- Baseline files store **SHA-256 hashes** of outputs, not raw content.
-- Raw prompts and outputs are suppressed in local SQLite history by default.
-- Baselines are safe to commit to public repositories.
-
-### Template Sandboxing
-- Prompt templates are rendered in a [Jinja2 SandboxedEnvironment](https://jinja.palletsprojects.com/en/3.1.x/sandbox/).
-- Templates cannot access the filesystem, execute code, or import modules.
-
-### CI Security
-- The GitHub Action uses `pull_request` (not `pull_request_target`) by default.
-- PR commenting is automatically disabled for fork PRs.
-- See [GitHub Action docs](docs/github-action.md) for fork security guidance.
-
-## Scope
-
-The following are **in scope** for security reports:
-- Credential exposure through error messages, logs, or reports
-- Template sandbox escapes
-- Baseline files leaking raw prompt or output content
-- Dependency vulnerabilities that affect PromptDrift users
-
-The following are **out of scope**:
-- Vulnerabilities in LLM providers themselves (OpenAI, Ollama)
-- Prompt injection attacks against the LLM (not a PromptDrift concern)
-- Issues in the user's own prompt templates
+Credential leaks, unexpected private-data retention, unsafe CI publication, sandbox escapes, remote schema retrieval and exploitable dependency flaws are in scope. Provider-side vulnerabilities and an LLM's own susceptibility to prompt injection are outside this repository's implementation boundary, though PromptDrift can help author behavioral checks for an application's requirements.

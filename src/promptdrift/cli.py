@@ -13,14 +13,22 @@ from rich.console import Console
 
 from . import __version__
 from .config import load_config
-from .engine.baseline import load_baseline, write_baseline
+from .engine.baseline import atomic_write, load_baseline, write_baseline
 from .engine.capture import create_interaction
 from .engine.check import orchestrate_check
 from .engine.discovery import discover_scenarios
 from .engine.regression import compare_to_baseline
 from .engine.runner import run_suite
 from .engine.suggest import suggest_assertions_for_scenario
-from .errors import BaselineError, ConfigError, PromptDriftError, ProviderError, TemplateError
+from .engine.suite import resolve_suite
+from .errors import (
+    BaselineError,
+    ConfigError,
+    EvaluationError,
+    PromptDriftError,
+    ProviderError,
+    TemplateError,
+)
 from .git import GitContext
 from .reports import print_impact_report, print_report, write_html_report
 from .storage import (
@@ -48,7 +56,7 @@ def _exit_error(error: Exception, verbose: bool = False) -> None:
         3
         if isinstance(error, ProviderError)
         else 2
-        if isinstance(error, (ConfigError, BaselineError, TemplateError))
+        if isinstance(error, (ConfigError, BaselineError, TemplateError, EvaluationError))
         else 3
     )
     raise typer.Exit(code=code)
@@ -57,10 +65,14 @@ def _exit_error(error: Exception, verbose: bool = False) -> None:
 def _run(config: str, with_baseline: bool, verbose: bool):
     try:
         loaded, config_path = load_config(config)
-        report = run_suite(loaded, config_path)
+        loaded, _ = resolve_suite(loaded, config_path)
         baseline_path = loaded.resolve_path(config_path, loaded.baseline.path)
-        if with_baseline and baseline_path.exists():
-            report = compare_to_baseline(report, load_baseline(baseline_path))
+        previous = (
+            load_baseline(baseline_path) if with_baseline and baseline_path.exists() else None
+        )
+        report = run_suite(loaded, config_path)
+        if previous is not None:
+            report = compare_to_baseline(report, previous)
             report.baseline_path = str(baseline_path)
         record_report(report, store_raw_output=loaded.baseline.store_raw_output)
         return loaded, config_path, report
@@ -89,6 +101,10 @@ def init(
     ] = False,
 ) -> None:
     """Zero-config project setup detecting Git repository and local prompt files."""
+    # GitContext uses this directory as a subprocess cwd. Create a requested
+    # starter directory before probing it so `promptdrift init -d new-project`
+    # works from an empty parent directory.
+    directory.mkdir(parents=True, exist_ok=True)
     git = GitContext(root=directory)
     is_git = git.is_git_repo()
 
@@ -101,12 +117,14 @@ def init(
         raise typer.Exit(code=2)
 
     console.print(
-        f"{'[green]✓[/]' if is_git else '[yellow]⚪[/]'} Git repository {'detected' if is_git else 'not detected'}"
+        f"{'[green]OK[/]' if is_git else '[yellow]INFO[/]'} Git repository {'detected' if is_git else 'not detected'}"
     )
     if prompt_files:
-        console.print(f"[green]✓[/] Prompt files detected: {len(prompt_files)} files")
+        console.print(f"[green]OK[/] Prompt files detected: {len(prompt_files)} files")
     else:
-        console.print("[yellow]⚪[/] No existing prompt files found; creating prompts/example.txt")
+        console.print(
+            "[yellow]INFO[/] No existing prompt files found; creating prompts/example.txt"
+        )
 
     example_prompt.parent.mkdir(parents=True, exist_ok=True)
     config_file.write_text(
@@ -352,9 +370,16 @@ def accept(
                 return
 
         if not path.exists():
-            # If baseline doesn't exist, we fallback to old behavior (accept all)
-            # but we still need git_sha and prompt_hash
-            report, impact = orchestrate_check(loaded, config_path)
+            if scenario or changed:
+                raise BaselineError(
+                    "Selective acceptance requires an existing baseline. Create a full reviewed baseline first."
+                )
+            # Initial acceptance evaluates the full suite and records revision evidence.
+            report, impact = orchestrate_check(loaded, config_path, selective=False)
+            if report.counts["FAIL"] and not accept_regressions:
+                raise BaselineError(
+                    "Refusing a failing baseline. Review failures or use --accept-regressions explicitly."
+                )
             from promptdrift.engine.baseline import write_baseline
 
             write_baseline(
@@ -365,8 +390,8 @@ def accept(
                 prompt_hash=impact.current_prompt_hash,
             )
         else:
-            # Baseline exists, do selective accept
-            report, impact = orchestrate_check(loaded, config_path)
+            # Evaluate the full suite; acceptance selection is independent of Git selection.
+            report, impact = orchestrate_check(loaded, config_path, selective=False)
             current_baseline = load_baseline(path)
 
             new_baseline = selective_accept(
@@ -380,7 +405,7 @@ def accept(
 
             archive_baseline(path)
             content = new_baseline.model_dump_json(indent=2) + "\n"
-            path.write_text(content, encoding="utf-8")
+            atomic_write(path, content)
 
         if json_output:
             typer.echo(json.dumps({"baseline": str(path), "status": "accepted"}, indent=2))
@@ -421,15 +446,30 @@ def test(
 def baseline(
     config: Annotated[str, typer.Option("--config", "-c")] = "promptdrift.yaml",
     force: Annotated[bool, typer.Option(help="Replace an existing baseline.")] = False,
+    accept_regressions: Annotated[
+        bool, typer.Option("--accept-regressions", help="Explicitly allow a failing baseline.")
+    ] = False,
     json_output: Annotated[bool, typer.Option("--json")] = False,
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
 ) -> None:
     """Create a canonical version-controlled baseline."""
+    try:
+        loaded, config_path = load_config(config)
+        path = loaded.resolve_path(config_path, loaded.baseline.path)
+        if path.exists() and not force:
+            raise BaselineError("Baseline already exists. Use --force to replace it after review.")
+    except PromptDriftError as error:
+        _exit_error(error, verbose)
+        return
     result = _run(config, with_baseline=False, verbose=verbose)
     if not result:
         return
     loaded, config_path, report = result
     try:
+        if report.counts["FAIL"] and not accept_regressions:
+            raise BaselineError(
+                "Refusing a failing baseline. Review failures or use --accept-regressions explicitly."
+            )
         path = loaded.resolve_path(config_path, loaded.baseline.path)
         write_baseline(path, report, force=force)
         if json_output:
@@ -442,6 +482,7 @@ def baseline(
 
 @app.command()
 def baselines(
+    config: Annotated[str, typer.Option("--config", "-c")] = "promptdrift.yaml",
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """List canonical baseline and archived history."""
@@ -450,7 +491,9 @@ def baselines(
     from promptdrift.engine.baseline import load_baseline
     from promptdrift.engine.baseline_history import list_baseline_history
 
-    paths = list_baseline_history()
+    loaded, config_path = load_config(config)
+    canonical = loaded.resolve_path(config_path, loaded.baseline.path)
+    paths = list_baseline_history(canonical.parent / ".promptdrift" / "baseline_history")
 
     if json_output:
         history = [{"path": str(p)} for p in paths]
@@ -527,6 +570,7 @@ def doctor(
     checks: list[dict[str, str | bool]] = []
     try:
         loaded, config_path = load_config(config)
+        loaded, _ = resolve_suite(loaded, config_path)
         checks.extend(
             [
                 {"name": "Config found and YAML valid", "passed": True},
@@ -534,12 +578,16 @@ def doctor(
             ]
         )
         for test_case in loaded.tests:
-            checks.append(
-                {
-                    "name": f"Prompt exists: {test_case.prompt}",
-                    "passed": loaded.resolve_path(config_path, test_case.prompt).is_file(),
-                }
-            )
+            from .templates import render_prompt
+
+            try:
+                render_prompt(
+                    loaded.resolve_path(config_path, test_case.prompt), test_case.variables
+                )
+                renderable = True
+            except (TemplateError, OSError):
+                renderable = False
+            checks.append({"name": f"Prompt renders: {test_case.prompt}", "passed": renderable})
         if loaded.provider.type == "openai":
             env = loaded.provider.api_key_env or "OPENAI_API_KEY"
             checks.append({"name": f"{env} found", "passed": bool(os.environ.get(env))})
@@ -558,7 +606,7 @@ def doctor(
 
         if privacy:
             checks.append({"name": "No telemetry configured", "passed": True})
-            checks.append({"name": "Local SQLite isolation active", "passed": True})
+            checks.append({"name": "Legacy history is local, not encrypted", "passed": True})
             checks.append(
                 {
                     "name": "Raw baseline suppression active",
@@ -581,6 +629,103 @@ def doctor(
             )
     if not all(bool(check["passed"]) for check in checks):
         raise typer.Exit(code=2)
+
+
+@app.command()
+def monitor(
+    config: Annotated[str, typer.Option("--config", "-c")] = "promptdrift.yaml",
+    samples: Annotated[
+        int, typer.Option(help="Probes per case (1-20); each may incur provider cost.")
+    ] = 3,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+    no_history: Annotated[
+        bool, typer.Option("--no-history", help="Do not persist the privacy-minimized report.")
+    ] = False,
+) -> None:
+    """Probe the full suite against a reviewed baseline, even when Git has no changes."""
+    from .engine.monitor import monitor_suite
+    from .storage.history import history_path, save_monitor_report
+
+    try:
+        loaded, config_path = load_config(config)
+        report = monitor_suite(loaded, config_path, samples=samples)
+        if not no_history:
+            try:
+                save_monitor_report(report, history_path(config_path))
+            except PromptDriftError as error:
+                report.warnings.append(str(error))
+    except (PromptDriftError, OSError, ValueError) as error:
+        code = 3 if isinstance(error, ProviderError) else 2
+        # Config/parser errors can contain private YAML values. Do not publish them in CI JSON.
+        message = "Monitoring could not start. Check configuration, baseline and prompt files locally with 'promptdrift doctor'."
+        if json_output:
+            typer.echo(
+                json.dumps(
+                    {"error": {"type": type(error).__name__, "message": message}, "exit_code": code}
+                )
+            )
+        else:
+            console.print(message, markup=False)
+        raise typer.Exit(code=code) from error
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        from .reports.monitor import print_monitor_report
+
+        print_monitor_report(report, console)
+    raise typer.Exit(code=report.exit_code)
+
+
+@app.command()
+def history(
+    config: Annotated[
+        str,
+        typer.Option(
+            "--config", "-c", help="Config path determines the project history directory."
+        ),
+    ] = "promptdrift.yaml",
+    limit: Annotated[int, typer.Option(min=1, max=1000)] = 20,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Read recent local monitoring reports without calling a provider."""
+    from .storage.history import history_path, load_monitor_history
+
+    try:
+        runs = load_monitor_history(history_path(Path(config).resolve()), limit=limit)
+    except PromptDriftError as error:
+        if json_output:
+            typer.echo(
+                json.dumps(
+                    {"error": {"type": type(error).__name__, "message": str(error)}, "exit_code": 2}
+                )
+            )
+            raise typer.Exit(code=2) from error
+        _exit_error(error)
+        return
+    if json_output:
+        typer.echo(json.dumps({"runs": runs}, indent=2))
+    elif not runs:
+        console.print("No monitoring history. Run 'promptdrift monitor' first.")
+    else:
+        for run in runs:
+            console.print(
+                f"{run['generated_at']}  {run['run_id']}  {run['diagnosis_counts']}", markup=False
+            )
+
+
+@app.command()
+def demo(json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
+    """Show a synthetic unchanged-input drift incident using a local HTTP fixture; no API key needed."""
+    from .demo import run_demo
+
+    report = run_demo()
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        from .reports.monitor import print_monitor_report
+
+        console.print("Synthetic local demo: fixture responses changed, not a real model update.")
+        print_monitor_report(report, console)
 
 
 @app.command()

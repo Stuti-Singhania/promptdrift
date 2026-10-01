@@ -1,0 +1,23 @@
+# Offline monitoring starter. From the repository root, create and review once:
+#   promptdrift baseline --config examples/monitoring/mock.yml
+# Commit mock.baseline.json, then run:
+#   promptdrift monitor --config examples/monitoring/mock.yml --samples 3 --json
+# Monitor never creates or overwrites the accepted baseline.
+version: 1
+provider:
+  type: mock
+  model: local-echo
+baseline:
+  path: mock.baseline.json
+  store_raw_output: false
+tests:
+  - id: refund-policy
+    prompt: ../customer-support/prompts/support.txt
+    variables:
+      policy: Refunds are available within 30 days.
+      question: Can I get a refund?
+    assertions:
+      - type: contains
+        value: 30 days
+      - type: not_contains
+        value: guaranteed

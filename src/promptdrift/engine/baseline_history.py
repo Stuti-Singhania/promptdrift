@@ -10,9 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 
-def archive_baseline(
-    baseline_path: Path, history_dir: Path = Path(".promptdrift/baseline_history")
-) -> Path | None:
+def archive_baseline(baseline_path: Path, history_dir: Path | None = None) -> Path | None:
     """Archive the current baseline to history directory if it exists.
 
     Returns the path to the newly created archive file, or None if no baseline existed.
@@ -20,6 +18,7 @@ def archive_baseline(
     if not baseline_path.is_file():
         return None
 
+    history_dir = history_dir or baseline_path.parent / ".promptdrift" / "baseline_history"
     history_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate timestamp for filename: YYYYMMDD_HHMMSS

@@ -8,16 +8,25 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import ValidationError
+
+from promptdrift.errors import ConfigError
 from promptdrift.models.capture import Scenario, ScenarioLibrary
 
 
-def load_scenarios(path: Path = Path(".promptdrift/scenarios.json")) -> ScenarioLibrary:
+def load_scenarios(
+    path: Path = Path(".promptdrift/scenarios.json"), *, strict: bool = False
+) -> ScenarioLibrary:
     if not path.is_file():
         return ScenarioLibrary(version=1, scenarios=[])
     try:
         content = path.read_text(encoding="utf-8")
         return ScenarioLibrary.model_validate_json(content)
-    except Exception:
+    except (OSError, ValueError, ValidationError) as exc:
+        if strict:
+            raise ConfigError(
+                "Scenario library is invalid or unreadable; restore it before evaluating coverage."
+            ) from exc
         return ScenarioLibrary(version=1, scenarios=[])
 
 

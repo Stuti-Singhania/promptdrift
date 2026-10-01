@@ -53,7 +53,7 @@ class ScenariosConfig(BaseModel):
 
 class SemanticEvalConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    enabled: bool = False
+    enabled: Literal[False] = False
     provider: str | None = None
     model: str | None = None
 
@@ -93,6 +93,12 @@ class Config(BaseModel):
 
     @model_validator(mode="after")
     def validate_tests_present(self) -> Config:
+        if self.ci != CIConfig():
+            raise ValueError(
+                "ci policy customization is not implemented; use assertion severity and thresholds"
+            )
+        if self.policy and (self.policy.fail_on != ["regression"] or self.policy.warn_on):
+            raise ValueError("only policy.fail_on: [regression] with an empty warn_on is supported")
         # If version is 1 or no scenarios config is specified, at least one test is required
         if self.version == 1 and not self.tests:
             raise ValueError("tests list cannot be empty for version: 1")

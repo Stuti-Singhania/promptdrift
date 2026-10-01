@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import math
+import re
 from typing import Any, Literal
 
+from jsonschema.exceptions import SchemaError
+from jsonschema.validators import validator_for
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ASSERTION_TYPES = {
@@ -45,15 +49,52 @@ class Assertion(BaseModel):
 
     @model_validator(mode="after")
     def validate_payload(self) -> Assertion:
-        if self.type == "json_schema" and not self.schema_:
-            raise ValueError("json_schema assertions require a schema")
+        if self.type == "json_schema":
+            if self.schema_ is None:
+                raise ValueError("json_schema assertions require a schema")
+            try:
+                validator_for(self.schema_).check_schema(self.schema_)
+            except SchemaError as exc:
+                raise ValueError("Invalid JSON schema") from exc
+            _check_local_references(self.schema_)
         if self.type not in {"json_valid", "json_schema"} and self.value is None:
             raise ValueError(f"{self.type} assertions require a value")
+        if self.type in {"regex", "not_regex"}:
+            try:
+                re.compile(str(self.value))
+            except re.error as exc:
+                raise ValueError("Invalid regex") from exc
+        if self.type in {"min_length", "max_length", "max_tokens", "latency_ms", "cost_usd"}:
+            if isinstance(self.value, bool) or not isinstance(self.value, (int, float)):
+                raise ValueError("Numeric assertions require a non-negative number")
+            if not math.isfinite(self.value) or self.value < 0:
+                raise ValueError("Numeric assertions require a finite non-negative number")
+            if (
+                self.type in {"min_length", "max_length", "max_tokens"}
+                and int(self.value) != self.value
+            ):
+                raise ValueError("Length and token assertions require an integer")
         return self
 
     @property
     def label(self) -> str:
         return self.name or self.type
+
+
+def _check_local_references(value: Any) -> None:
+    """Schemas must not retrieve remote resources while evaluating provider output."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if (
+                key in {"$ref", "$dynamicRef", "$recursiveRef"}
+                and isinstance(item, str)
+                and not item.startswith("#")
+            ):
+                raise ValueError("JSON schema references must be local fragments (#...)")
+            _check_local_references(item)
+    elif isinstance(value, list):
+        for item in value:
+            _check_local_references(item)
 
 
 class Evaluator(BaseModel):
@@ -93,7 +134,6 @@ class TestCase(BaseModel):
     def reject_unimplemented_evaluators(self) -> TestCase:
         if self.evaluators:
             raise ValueError(
-                "optional evaluators are not available in PromptDrift 0.1.0; "
-                "use deterministic assertions instead"
+                "optional evaluators are not available; use deterministic assertions instead"
             )
         return self

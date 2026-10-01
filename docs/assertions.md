@@ -129,7 +129,7 @@ Passes if the output has **at most** this many characters.
 
 ### `max_tokens`
 
-Passes if the output uses at most this many tokens (as reported by the provider, or estimated by word count).
+Passes if the provider-reported output token count is at most this limit. Missing usage fails the check at the configured severity; word counts are not silently substituted for tokens.
 
 ```yaml
 - type: max_tokens
@@ -147,13 +147,15 @@ Passes if the provider response time is at or below the limit in milliseconds.
 
 ### `cost_usd`
 
-Passes if the estimated cost of the request is at or below the limit.
+Passes if an available estimated cost is at or below the limit. OpenAI-compatible responses do not currently supply a priced cost estimate, so `cost_usd` cannot pass for them: unknown is not zero. Mock/Ollama report zero external API cost, not total infrastructure cost.
 
 ```yaml
 - type: cost_usd
   value: 0.05
   severity: warn
 ```
+
+Regex syntax and numeric limits are validated when loading configuration. JSON schemas may use local fragment references only (`#...`); evaluation never retrieves remote schemas. `output.format: json` on a test is also enforced as a JSON-validity contract.
 
 ## Severity Levels
 

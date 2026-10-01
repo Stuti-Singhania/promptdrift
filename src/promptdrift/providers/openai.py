@@ -39,16 +39,27 @@ class OpenAIProvider(Provider):
             response.raise_for_status()
             payload = response.json()
             usage = payload.get("usage", {})
-            output = payload["choices"][0]["message"]["content"] or ""
-        except (httpx.HTTPError, KeyError, ValueError) as exc:
+            output = payload["choices"][0]["message"]["content"]
+            if not isinstance(output, str):
+                raise ValueError("Expected a text completion")
+            return ModelResponse(
+                output=output,
+                input_tokens=usage.get("prompt_tokens"),
+                output_tokens=usage.get("completion_tokens"),
+                latency_ms=round((time.perf_counter() - start) * 1000, 2),
+                model=self.config.model,
+                provider="openai",
+                resolved_model=payload.get("model"),
+                system_fingerprint=payload.get("system_fingerprint"),
+                estimated_cost_usd=None,
+            )
+        except (
+            httpx.HTTPError,
+            KeyError,
+            ValueError,
+            IndexError,
+            TypeError,
+            AttributeError,
+        ) as exc:
             # Do not include response bodies: they can contain sensitive prompt data.
             raise ProviderError(f"OpenAI request failed: {type(exc).__name__}") from exc
-        return ModelResponse(
-            output=output,
-            input_tokens=usage.get("prompt_tokens"),
-            output_tokens=usage.get("completion_tokens"),
-            latency_ms=round((time.perf_counter() - start) * 1000, 2),
-            model=self.config.model,
-            provider="openai",
-            estimated_cost_usd=None,
-        )

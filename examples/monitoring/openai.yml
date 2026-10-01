@@ -1,0 +1,28 @@
+# Paid opt-in example; NOT selected by the checked-in monitoring workflow.
+# Supply OPENAI_API_KEY through a secret/environment, never in this file.
+# First create a healthy baseline deliberately and review/commit it:
+#   promptdrift baseline --config examples/monitoring/openai.yml
+# Then schedule `monitor`, never `baseline --force` or `accept`.
+# Each run makes up to samples * cases provider requests. Choose budget/cadence.
+version: 1
+provider:
+  type: openai
+  model: gpt-4o-mini
+  api_key_env: OPENAI_API_KEY
+defaults:
+  temperature: 0
+  max_output_tokens: 100
+baseline:
+  path: openai.baseline.json
+  store_raw_output: false
+tests:
+  - id: refund-policy
+    prompt: ../customer-support/prompts/support.txt
+    variables:
+      policy: Refunds are available within 30 days. State this policy explicitly.
+      question: Can I get a refund?
+    assertions:
+      - type: contains
+        value: 30 days
+      - type: not_contains
+        value: guaranteed
