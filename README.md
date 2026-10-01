@@ -5,17 +5,22 @@
 [![Python](https://img.shields.io/pypi/pyversions/promptdrift-ci)](https://pypi.org/project/promptdrift-ci/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**Your prompts stayed the same. Did your model's behavior?**
+**Your prompt didn't change. Your tests didn't change. So why did your AI behavior change?**
 
-PromptDrift is a Python CLI and GitHub Action for fresh behavioral checks against a reviewed, Git-tracked baseline. Monitor an unchanged prompt suite on a schedule, distinguish contract regressions from harmless wording changes, and inspect evidence before blaming a model update.
+PromptDrift is a Git-native, privacy-conscious CLI and GitHub Action that detects behavioral regression and model drift. It repeatedly probes your unchanged prompts on a schedule, distinguishing actual contract regressions from harmless wording changes, and gathering evidence before you blame a model update.
 
-It also checks intentional prompt changes in pull requests and can turn captured interactions into candidate tests. It is **not** a general-purpose evaluation platform, hosted observability service, or proof that a provider changed its model weights.
+## The Core Problem
 
-> **Development status:** monitoring, history and the synthetic demo below are part of **0.4.0 (unreleased)**. Install this checkout to try them. `pip install promptdrift-ci` installs the published release, which may not contain these commands. The project remains pre-1.0.
+LLM behavior isn't static. Providers update routing, system prompts, or safety filters silently. Traditional testing only runs when *your code* changes.
 
-## Try an incident without an API key
+| State | Prompt | Config | Behavior | Diagnosis |
+| :--- | :--- | :--- | :--- | :--- |
+| **Traditional CI** | Changed | Changed | Changed | `prompt_changed` |
+| **PromptDrift Monitor** | Same | Same | **Changed** | `observed_model_drift` |
 
-Python 3.11+ required. Prefer a virtual environment.
+## See It in Action
+
+Try a simulated drift incident locally without an API key or paid provider:
 
 ```bash
 git clone https://github.com/tanveer-arch/promptdrift.git
@@ -24,22 +29,30 @@ python -m pip install .
 promptdrift demo
 ```
 
-The demo starts a temporary **loopback HTTP fixture**, saves a passing baseline, then changes only the fixture's response. The real OpenAI-compatible adapter and monitoring engine report `observed_model_drift` after three contract failures. **This is a synthetic demonstration, not a real model incident or benchmark.** No external API, paid key, or persistent project files are needed.
+> **Note:** The demo starts a temporary loopback HTTP fixture, saves a passing baseline, then changes only the fixture's response. It will report `observed_model_drift` after three contract failures. This is a synthetic demonstration, not a real model incident or benchmark.
 
-## Monitor your own application contract
+## 60-Second Quickstart
 
-Start in a separate project directory:
+Install the published release:
+
+```bash
+pip install promptdrift-ci
+```
+
+Initialize your project and run your first checks:
 
 ```bash
 promptdrift init --directory my-monitor
 cd my-monitor
-promptdrift test
-promptdrift baseline
-promptdrift monitor --samples 3
-promptdrift history
+promptdrift test       # Run tests against your current config
+promptdrift baseline   # Save passing tests as the canonical baseline
+promptdrift monitor --samples 3 # Probe 3 times to detect drift
+promptdrift history    # View the results of your monitoring
 ```
 
-The starter uses a deterministic mock. To monitor a real endpoint, change the provider, author a few representative cases, and create a **new reviewed baseline** for that provider:
+## Example Configuration
+
+Define your deterministic behavioral contracts in `promptdrift.yaml`.
 
 ```yaml
 version: 2
@@ -65,82 +78,146 @@ tests:
         value: guaranteed
 ```
 
-`prompts/support.txt`:
+## The Core Differentiator: Check vs. Monitor
 
-```text
-You are a support assistant. Refunds are available within 30 days.
-Answer concisely using that policy. Question: {{ question }}
-```
+PromptDrift provides two distinct workflows:
 
-Set `OPENAI_API_KEY` using your environment or CI secret store, then run:
+1. **`check` mode (PRs):** *Did the repository change?* Run this in CI on Pull Requests to ensure your intentional prompt or configuration changes don't break existing contracts.
+2. **`monitor` mode (Scheduled):** *Did the behavior change even though the monitored inputs stayed the same?* Schedule this to run repeatedly (e.g., daily) against an idle repository to catch silent provider drift.
 
-```bash
-promptdrift doctor
-promptdrift baseline --force  # Review behavior; deliberately replaces a previous baseline.
-promptdrift monitor --samples 3 --json
-```
+## What PromptDrift Detects
 
-Commit the reviewed baseline with your contracts. Schedule **monitor**, not a changed-files-only PR job, to detect changes when your repository is idle. Each run makes **samples × active cases** fresh provider calls; no output cache or automatic retries. Provider charges still apply.
+PromptDrift uses deterministic heuristics, not statistical guesswork. 
 
-## What the diagnosis means
-
-| Observation | Diagnosis | CI result |
-| --- | --- | --- |
-| Same monitored inputs, all repeated probes now fail behavioral contracts | `observed_model_drift` | Fail |
-| Some repeated probes pass and others fail behavioral contracts | `stochastic_behavior` | Fail if any failure |
-| Rendered prompt, generation settings, provider or contracts changed | Explicit `*_changed` diagnosis with all changed fingerprints listed | Determined by contract results |
-| Output wording changed, contracts still pass | `output_changed` | Pass |
-| Timeout, HTTP error, malformed completion | `provider_error` | Infrastructure failure |
-| Old baseline lacks provenance, previous baseline was unhealthy, or evidence is insufficient | `insufficient_evidence` | Warning unless contracts fail |
-
-Fingerprints are **per case**, so selective acceptance retains the evidence belonging to each accepted case. Provider-reported model IDs/fingerprints are supporting signals only. One accepted sample and a handful of probes are not a statistically calibrated detector. Read the [diagnosis rules and limits](docs/monitoring.md) before using alerts operationally.
-
-## CI and alerts
-
-The [composite GitHub Action](action/action.yml) supports:
-
-- existing Git-aware `check` mode and full-suite `monitor` mode;
-- machine-readable artifacts and step summaries retained before enforcing the CLI result;
-- opt-in same-repository PR comments;
-- opt-in deduplicated monitoring issues for scheduled/manual jobs;
-- explicit working-directory, package version and sampling settings.
-
-See the [Action guide](docs/github-action.md) and [scheduled workflow example](.github/workflows/monitor-example.yml). No paid scheduled job is enabled in this repository. Pin a reviewed Action revision and matching package version when deploying. Never expose provider keys to untrusted PR code.
-
-## Commands
-
-| Workflow | Commands |
+| Observation | Diagnosis |
 | --- | --- |
-| First use | `init`, `doctor`, `demo` |
-| Unchanged-input monitoring | **`monitor`**, **`history`** |
-| PR regression checks | `check --base origin/main`, `test`, `diff` |
-| Reviewed references | `baseline`, `accept --scenario ID`, `accept --changed`, `baselines` |
-| Local evidence | `report` (HTML; contains raw results) |
-| Capture to coverage | `capture`, `learn`, `scenarios`, `suggest`, `promote` |
-| Maintenance | `purge` (legacy capture/run store), `version` |
+| Monitored inputs match, all repeated probes fail contracts | `observed_model_drift` |
+| Some repeated probes pass and others fail contracts | `stochastic_behavior` |
+| Rendered prompt, settings, provider, or contracts changed | Explicit `*_changed` |
+| Output wording changed, but contracts still pass | `output_changed` |
+| Timeout, HTTP error, malformed completion | `provider_error` |
+| Old baseline lacks provenance or evidence is insufficient | `insufficient_evidence` |
 
-`baseline`/initial `accept` refuse failed contracts without `--accept-regressions`. `--force` only authorizes overwriting, not silently accepting failures. Monitoring never updates your baseline.
+> **Note:** Provider-reported model IDs and fingerprints are treated as supporting evidence, not proof of a vendor-side model weights change.
 
-## Providers and evaluators
+## GitHub Actions
 
-**Providers:** OpenAI Chat Completions (including compatible `base_url` endpoints), Ollama, and deterministic mock. Compatible servers must implement the supported text-response API; not every model accepts `temperature`/`max_tokens`.
+Run PromptDrift directly in your CI pipeline.
 
-**Contracts:** `exact_match`, `contains`, `not_contains`, `regex`, `not_regex`, `json_valid`, `json_schema`, `min_length`, `max_length`, `max_tokens`, `latency_ms`, `cost_usd`. JSON schemas resolve local references only. Unknown token/cost usage cannot satisfy a configured limit. `output.format: json` enforces JSON validity.
+```yaml
+name: Scheduled Monitor
+on:
+  schedule:
+    - cron: '0 9 * * *' # Every day at 9 AM
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: tanveer-arch/promptdrift/action@main
+        with:
+          mode: monitor
+          samples: 3
+          create-issue: 'true' # Deduplicated alerts for drift
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+```
 
-Semantic embeddings and LLM judges are **not implemented as usable suite evaluators**. Unsupported settings are rejected, not presented as working capabilities.
+## Supported Providers
 
-## Privacy boundaries
+- **OpenAI-Compatible:** Supports the text-response Chat Completions API. Set `base_url` for proxies, local inference, or compatible endpoints.
+- **Ollama:** Completely local inference. Runs against the Generate API.
+- **Mock:** A deterministic local provider for offline testing and CI onboarding. Echoes prompts back with zero cost or latency.
 
-- No telemetry or hosted account. Fresh probes go to your configured provider.
-- Monitoring JSON/history omit raw prompts, responses, contract values, and provider exception bodies.
-- Baselines store hashes, metrics, IDs and provenance, **not encryption**. Low-entropy content can be guessed; review IDs and metadata before publishing.
-- Legacy `test/check/diff --json` and HTML reports can contain raw data. Their local SQLite history suppresses prompts, outputs and evaluation payloads by default.
-- Capture is separate and requires deliberate privacy configuration. Read [SECURITY.md](SECURITY.md).
+## Deterministic Assertions
 
-## Documentation and contributing
+PromptDrift evaluates behavior using strict contracts, not subjective LLM judges.
 
-[Getting started](docs/getting-started.md) · [Monitoring](docs/monitoring.md) · [Configuration](docs/configuration.md) · [Baselines](docs/baselines.md) · [Providers](docs/providers.md) · [Assertions](docs/assertions.md) · [Architecture](docs/architecture.md)
+| Assertion | Behavior |
+| --- | --- |
+| `exact_match` | Character-for-character identical |
+| `contains`, `not_contains` | Substring inclusion or exclusion |
+| `regex`, `not_regex` | Regular expression matching |
+| `json_valid`, `json_schema` | JSON parseability and structural validation |
+| `min_length`, `max_length` | Character count boundaries |
+| `max_tokens` | Provider-reported token limit |
+| `latency_ms` | Maximum acceptable response time |
+| `cost_usd` | Cost threshold (where supported) |
 
-[Contributing](CONTRIBUTING.md) explains offline tests and module boundaries. The [source-linked ecosystem comparison](docs/competitive-landscape.md) documents overlap rather than claiming invented uniqueness. [Next engineering priorities](docs/roadmap.md) describe concrete, testable work—not promised features.
+## Privacy & Security
 
-Licensed under [MIT](LICENSE).
+Your data is yours. PromptDrift is designed with strict privacy boundaries:
+
+- **No telemetry or hosted dashboard:** Your probes go directly to your configured provider.
+- **Minimized history:** `monitor` JSON and SQLite history explicitly omit raw prompts, responses, and API exceptions to prevent accidental data leaks.
+- **Safe credentials:** API keys are never read from configuration files, only from environment variables.
+- **Hashes, not encryption:** Baselines use SHA-256 hashes of rendered inputs for comparison. *(Note: Hashes of short strings can be guessed, so repository access control still matters)*.
+- **Secure Action design:** The GitHub Action prevents arbitrary execution and never exposes provider secrets to untrusted PR code. Legacy reports can contain raw data but are strictly controlled.
+
+## Architecture
+
+```mermaid
+graph TD
+    A[promptdrift.yaml Config] --> B(Suite Resolution)
+    B --> C(Provider Adapter)
+    C --> D[ModelResponse]
+    D --> E(Assertions + Evidence)
+    E --> F{Baseline Comparison}
+    F --> G[Diagnosis]
+    G --> H[CLI / GitHub Action / History]
+```
+
+## The Capture Workflow
+
+Beyond static testing, PromptDrift can learn from real traffic:
+1. **`capture`**: Record real or simulated interactions into local storage.
+2. **`learn`**: Turn captured interactions into candidate regression scenarios.
+3. **`suggest`**: Generate deterministic behavioral contracts for a scenario.
+4. **`promote`**: Move candidate scenarios into your committed regression test suite.
+
+## Is PromptDrift for you?
+
+**Who it is for:**
+- AI application developers.
+- Teams consuming LLM APIs in production.
+- GitHub-centric engineering teams.
+- Developers running local models with Ollama.
+- Projects needing strict, deterministic behavioral contracts.
+
+**Who it is NOT for:**
+- Not a general-purpose evaluator marketplace.
+- Not a hosted observability dashboard.
+- Not a statistical guarantee of model-weight changes.
+- Not an automatic baseline approval system.
+
+## Contributing
+
+We welcome contributions! The engine, providers, and evaluators are intentionally decoupled to make adding features straightforward.
+
+- **Setup:** See [CONTRIBUTING.md](CONTRIBUTING.md) for local development instructions.
+- **Run tests:** `python -m pytest`
+
+### Looking for a way to contribute?
+
+Check out our [Roadmap](docs/roadmap.md) for maintainer-reviewed candidates, including:
+- OpenAI-compatible fixture coverage.
+- Ollama provenance tests.
+- Monitoring history reliability.
+- Provider error taxonomy.
+- GitHub Action report-contract testing.
+- Cross-platform CLI coverage.
+
+## Documentation
+
+- [Getting Started](docs/getting-started.md)
+- [Monitoring](docs/monitoring.md)
+- [Configuration](docs/configuration.md)
+- [Baselines](docs/baselines.md)
+- [Providers](docs/providers.md)
+- [Assertions](docs/assertions.md)
+- [Architecture](docs/architecture.md)
+- [Competitive Landscape](docs/competitive-landscape.md)
+
+## License
+
+PromptDrift is released under the [MIT License](LICENSE).
