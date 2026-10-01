@@ -52,7 +52,7 @@ inputs:
     default: ''
 outputs:
   result:
-    description: Absolute path to the sanitized JSON report, including on CLI failure
+    description: Absolute path to the Action JSON report, including on CLI failure
     value: ${{ steps.run.outputs.result }}
   exit-code:
     description: CLI exit code (or 2 for Action input/installation/invalid successful JSON errors)
