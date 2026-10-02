@@ -27,8 +27,7 @@ def _validate_history_schema(db: sqlite3.Connection) -> int:
         )
 
     table = db.execute(
-        "SELECT name FROM sqlite_master "
-        "WHERE type = 'table' AND name = 'monitor_runs'"
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'monitor_runs'"
     ).fetchone()
 
     if table is None:
@@ -37,9 +36,7 @@ def _validate_history_schema(db: sqlite3.Connection) -> int:
             "back up or remove the local history database."
         )
 
-    columns = [
-        row[1] for row in db.execute("PRAGMA table_info(monitor_runs)").fetchall()
-    ]
+    columns = [row[1] for row in db.execute("PRAGMA table_info(monitor_runs)").fetchall()]
 
     if columns != ["run_id", "report_json"]:
         raise PromptDriftError(
@@ -54,8 +51,7 @@ def _ensure_history_schema(db: sqlite3.Connection) -> None:
     version = db.execute("PRAGMA user_version").fetchone()[0]
 
     table = db.execute(
-        "SELECT name FROM sqlite_master "
-        "WHERE type = 'table' AND name = 'monitor_runs'"
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'monitor_runs'"
     ).fetchone()
 
     if table is None:
@@ -65,10 +61,7 @@ def _ensure_history_schema(db: sqlite3.Connection) -> None:
                 "back up or remove the local history database."
             )
 
-        db.execute(
-            "CREATE TABLE monitor_runs "
-            "(run_id TEXT PRIMARY KEY, report_json TEXT NOT NULL)"
-        )
+        db.execute("CREATE TABLE monitor_runs (run_id TEXT PRIMARY KEY, report_json TEXT NOT NULL)")
         db.execute(f"PRAGMA user_version = {HISTORY_SCHEMA_VERSION}")
         return
 
@@ -99,9 +92,7 @@ def _history_write_error(exc: Exception) -> PromptDriftError:
             "back up the database, then remove it and rerun monitoring."
         )
 
-    return PromptDriftError(
-        "Monitoring completed but local history could not be saved."
-    )
+    return PromptDriftError("Monitoring completed but local history could not be saved.")
 
 
 def save_monitor_report(report: MonitorReport, path: Path, *, retention: int = 1000) -> None:
@@ -120,7 +111,6 @@ def save_monitor_report(report: MonitorReport, path: Path, *, retention: int = 1
             )
     except (OSError, sqlite3.Error) as exc:
         raise _history_write_error(exc) from exc
-
 
 
 def _history_read_error(exc: Exception) -> PromptDriftError:
@@ -145,8 +135,7 @@ def _history_read_error(exc: Exception) -> PromptDriftError:
         )
 
     return PromptDriftError(
-        "Monitoring history is unreadable; "
-        "back up or remove the local history database."
+        "Monitoring history is unreadable; back up or remove the local history database."
     )
 
 

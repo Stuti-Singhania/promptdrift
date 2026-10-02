@@ -298,10 +298,7 @@ def test_history_migrates_legacy_schema(monitored):
     # Create the legacy schema used before schema versioning.
     history_db.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(history_db) as db:
-        db.execute(
-            "CREATE TABLE monitor_runs "
-            "(run_id TEXT PRIMARY KEY, report_json TEXT NOT NULL)"
-        )
+        db.execute("CREATE TABLE monitor_runs (run_id TEXT PRIMARY KEY, report_json TEXT NOT NULL)")
 
     report = monitor_suite(config, path, samples=1)
     save_monitor_report(report, history_db)
@@ -347,7 +344,6 @@ def test_cli_history_never_calls_provider(monitored, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["runs"][0]["run_id"] == report.run_id
-
 
 
 @pytest.mark.parametrize("failure", ["missing", "corrupt", "invalid_samples", "invalid_yaml"])
@@ -450,10 +446,7 @@ def test_history_rejects_newer_schema(monitored):
 
     history_db.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(history_db) as db:
-        db.execute(
-            "CREATE TABLE monitor_runs "
-            "(run_id TEXT PRIMARY KEY, report_json TEXT NOT NULL)"
-        )
+        db.execute("CREATE TABLE monitor_runs (run_id TEXT PRIMARY KEY, report_json TEXT NOT NULL)")
         db.execute("PRAGMA user_version = 99")
 
     report = monitor_suite(config, path, samples=1)
@@ -466,10 +459,7 @@ def test_history_read_rejects_newer_schema(tmp_path):
     history_db = tmp_path / "history.sqlite3"
 
     with sqlite3.connect(history_db) as db:
-        db.execute(
-            "CREATE TABLE monitor_runs "
-            "(run_id TEXT PRIMARY KEY, report_json TEXT NOT NULL)"
-        )
+        db.execute("CREATE TABLE monitor_runs (run_id TEXT PRIMARY KEY, report_json TEXT NOT NULL)")
         db.execute("PRAGMA user_version = 99")
         db.commit()
 
@@ -481,10 +471,7 @@ def test_history_rejects_incompatible_table_schema(tmp_path):
     history_db = tmp_path / "history.sqlite3"
 
     with sqlite3.connect(history_db) as db:
-        db.execute(
-            "CREATE TABLE monitor_runs "
-            "(run_id TEXT PRIMARY KEY, payload TEXT NOT NULL)"
-        )
+        db.execute("CREATE TABLE monitor_runs (run_id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
         db.commit()
 
     with pytest.raises(PromptDriftError, match="incompatible"):
@@ -496,10 +483,7 @@ def test_history_read_does_not_migrate_legacy_schema(tmp_path):
     report_json = json.dumps({"run_id": "legacy-run", "counts": {"PASS": 1}})
 
     with sqlite3.connect(history_db) as db:
-        db.execute(
-            "CREATE TABLE monitor_runs "
-            "(run_id TEXT PRIMARY KEY, report_json TEXT NOT NULL)"
-        )
+        db.execute("CREATE TABLE monitor_runs (run_id TEXT PRIMARY KEY, report_json TEXT NOT NULL)")
         db.execute(
             "INSERT INTO monitor_runs (run_id, report_json) VALUES (?, ?)",
             ("legacy-run", report_json),
@@ -567,9 +551,7 @@ def test_history_save_locked_database_has_clear_recovery_message(monitored, monk
         save_monitor_report(report, history_db)
 
 
-def test_history_save_corrupted_database_has_clear_recovery_message(
-    monitored, monkeypatch
-):
+def test_history_save_corrupted_database_has_clear_recovery_message(monitored, monkeypatch):
     config, path = monitored
     history_db = history_path(path)
     report = monitor_suite(config, path, samples=1)
