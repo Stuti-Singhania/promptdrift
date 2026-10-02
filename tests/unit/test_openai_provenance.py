@@ -206,11 +206,7 @@ def test_malformed_json_fails_safely(monkeypatch):
         ),
     ],
 )
-
-
-def test_invalid_response_shapes_fail_safely(
-    monkeypatch, fixture_name, private_value
-):
+def test_invalid_response_shapes_fail_safely(monkeypatch, fixture_name, private_value):
     _install_payload(monkeypatch, fixture_name)
 
     provider = OpenAIProvider(
